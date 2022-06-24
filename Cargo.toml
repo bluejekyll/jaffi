@@ -1,0 +1,16 @@
+[package]
+name = "jaffi"
+version = "0.1.0"
+edition = "2021"
+
+author = "benjaminfry@me.com"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cafebabe = { version = "0.5.0", path = "../cafebabe" }
+enum-as-inner = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0.20"
+tinytemplate = "1.2.1"
+typed-builder = "0.10.0"
