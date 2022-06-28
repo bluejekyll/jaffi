@@ -7,9 +7,15 @@ author = "benjaminfry@me.com"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [
+    "jaffi_support"
+]
+
 [dependencies]
 cafebabe = { version = "0.5.0", path = "../cafebabe" }
 enum-as-inner = "0.5"
+jaffi_support = { version = "0.1.0", path = "./jaffi_support" }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.20"
 tinytemplate = "1.2.1"

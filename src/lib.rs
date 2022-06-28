@@ -24,12 +24,12 @@ mod error;
 mod template;
 
 pub use error::{Error, ErrorKind};
-use template::Function;
+use template::{Arg, Function, JniType, Object, ObjectType, Return};
 use tinytemplate::TinyTemplate;
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -37,6 +37,8 @@ use std::{
 
 use cafebabe::{MethodAccessFlags, ParseOptions};
 use typed_builder::TypedBuilder;
+
+use crate::template::BaseJniTy;
 
 /// A utility for generating Rust FFI implementations from Java class files that contain `native` functions.
 #[derive(TypedBuilder)]
@@ -65,7 +67,9 @@ impl<'a> Jaffi<'a> {
 
         // shared buffer for classes that are read into memory
         let mut class_buf = Vec::<u8>::new();
+        let mut argument_types = HashSet::<ObjectType>::new();
 
+        // create all the classes
         for class in &self.classes {
             class_buf.clear();
             let class = class_to_path(class);
@@ -90,17 +94,22 @@ impl<'a> Jaffi<'a> {
                 );
             }
 
-            self.generate_native_impls(&class_buf, &template)?;
+            let objects = self.generate_native_impls(&class_buf, &template)?;
+            argument_types.extend(objects);
         }
+
+        // create the wrapper types
+        self.generate_support_types(argument_types, &template)?;
 
         Ok(())
     }
 
-    fn generate_native_impls(
+    /// Returns list of Support types needed as interfaces in the ABI interfaces
+    fn generate_native_impls<'b>(
         &self,
-        class_bytes: &[u8],
+        class_bytes: &'b [u8],
         template: &TinyTemplate<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<HashSet<ObjectType>, Error> {
         let output_dir = &Cow::Borrowed(Path::new("."));
         let output_dir = if let Some(ref dir) = self.output_dir {
             dir
@@ -126,11 +135,68 @@ impl<'a> Jaffi<'a> {
                 map
             });
 
+        // All objects needed to support calls into JNI from Java
+        let mut argument_objects = HashSet::<ObjectType>::new();
+
+        // This class will always be necessary
+        let this_class = ObjectType::Object(class_file.this_class.to_string());
+        argument_objects.insert(this_class.clone());
+
         // build up the function definitions
         let mut functions = Vec::new();
         for method in native_methods {
+            println!("{method:#?}");
+
+            let descriptor = method.descriptor.to_string();
+
+            let class_or_this = if method.access_flags.contains(MethodAccessFlags::STATIC) {
+                this_class.to_jni_class_name()
+            } else {
+                this_class.to_jni_type_name().to_string()
+            };
+
+            let fn_name = if *method_names
+                .get(&method.name)
+                .expect("should have been added above")
+                > 1
+            {
+                // need to long abi name
+                method_to_long_abi_name(&class_file.this_class, &method.name, &descriptor)
+            } else {
+                // short is ok (faster lookup in dynamic linking)
+                method_to_abi_name(&class_file.this_class, &method.name)
+            };
+
+            let arg_types = method
+                .descriptor
+                .parameters
+                .iter()
+                .map(JniType::from_java)
+                .collect::<Vec<_>>();
+
+            for ty in &arg_types {
+                match ty {
+                    JniType::Ty(BaseJniTy::Jobject(obj)) => argument_objects.insert(obj.clone()),
+                    _ => continue,
+                };
+            }
+
+            let arguments = arg_types
+                .into_iter()
+                .enumerate()
+                .map(move |(i, ty)| Arg {
+                    name: format!("arg{i}"),
+                    ty: ty.to_jni_type_name(),
+                })
+                .collect();
+            let result = Return::from_java(&method.descriptor.result);
+
             let function = Function {
-                signature: method.descriptor.to_string(),
+                name: fn_name,
+                signature: descriptor,
+                class_or_this,
+                arguments,
+                result: result.to_jni_type_name(),
             };
 
             functions.push(function);
@@ -139,7 +205,7 @@ impl<'a> Jaffi<'a> {
         // build up the rendering information.
         let context = template::RustFfi {
             class_name: class_file.this_class.clone(),
-            functions: functions,
+            functions,
         };
 
         // the file name will be the full class name
@@ -149,6 +215,39 @@ impl<'a> Jaffi<'a> {
 
         let rendered = template.render(template::RUST_FFI, &context)?;
 
+        let mut rust_file = File::create(rust_file)?;
+        rust_file.write_all(rendered.as_bytes())?;
+
+        Ok(argument_objects)
+    }
+
+    fn generate_support_types(
+        &self,
+        mut types: HashSet<ObjectType>,
+        template: &TinyTemplate<'_>,
+    ) -> Result<(), Error> {
+        let output_dir = &Cow::Borrowed(Path::new("."));
+        let output_dir = if let Some(ref dir) = self.output_dir {
+            dir
+        } else {
+            output_dir
+        };
+
+        let context = template::RustFfiObjects {
+            objects: types
+                .drain()
+                .filter_map(|obj| {
+                    if let ObjectType::Object(_) = obj {
+                        Some(Object::from(obj))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
+        };
+        let rendered = template.render(template::RUST_FFI_OBJ, &context)?;
+
+        let rust_file = output_dir.join("support_types").with_extension("rs");
         let mut rust_file = File::create(rust_file)?;
         rust_file.write_all(rendered.as_bytes())?;
 
