@@ -11,9 +11,12 @@ use std::{
 };
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
-use jaffi_support::jni::{
-    objects::{JByteBuffer, JClass, JObject, JString, JThrowable},
-    sys,
+use jaffi_support::{
+    jni::{
+        objects::{JByteBuffer, JClass, JObject, JString, JThrowable},
+        sys,
+    },
+    JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort,
 };
 use serde::Serialize;
 
@@ -25,37 +28,80 @@ pub(crate) static RUST_FFI: &str = "RUST_FFI";
 pub(crate) static RUST_FFI_OBJ: &str = "RUST_FFI_OBJ";
 
 /// Template for the generated rust files.
-
+///
+/// This generates the trait for each of the FFI functions.
 static RUST_FFI_TEMPLATE: &str = r#"
 use jaffi_support::jni::\{
+    JNIEnv,
     objects::\{JByteBuffer, JClass},
+    self,
     sys::jlong,
-    JNIEnv
 };
+
+use super::{- trait_impl -};
+
+trait { trait_name }<'j> \{
+    /// Costruct this type from the Java object
+    /// 
+    /// Implementations should consider storing both values as types on the implementation object
+    fn from_env(env: JNIEnv<'j>) -> Self;
+
+    /// Get the java object that backs this type
+    fn java_obj(&self) -> &{ type_name -}<'j>;
+{{ for function in functions }}
+    fn { function.name }(
+        this: { function.class_or_this -},
+        {{- for arg in function.arguments }}
+        { arg.name }: { arg.rs_ty },
+        {{- endfor }}    
+    ) -> { function.rs_result -};
+{{ endfor }}
+}
 
 {{ for function in functions }}
 /// JNI method signature { function.signature }
 #[no_mangle]
-pub extern "system" fn { function.name -}<'j>(
+pub extern "system" fn { function.ffi_name -}<'j>(
     env: JNIEnv<'j>,
     this: { function.class_or_this -},
-    {{ for arg in function.arguments }}
+    {{- for arg in function.arguments }}
     { arg.name }: { arg.ty },
-    {{ endfor }}
+    {{- endfor }}
 ) -> { function.result } \{
+    let myself = { trait_name }::from_java(env);
+    
+    {{- for arg in function.arguments }}
+    let { arg.name } = { arg.name }.java_to_rust();
+    {{- endfor }}
+    
+    let result = myself.{ function.name } (
+        myself,
+        {{- for arg in function.arguments }}
+        { arg.name },
+        {{- endfor }}
+    );
 
+    <{ function.result -}>::rust_to_java(result)
 }
 {{ endfor }}
 "#;
 
+/// This will generate common support objects.
 static RUST_FFI_OBJ_TEMPLATE: &str = r#"
 use std::ops::Deref;
 
-use jaffi_support::jni::objects::\{JClass, JObject};
+use jaffi_support::jni::\{self, objects::\{JClass, JObject}};
 
 {{ for obj in objects }}
+#[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct { obj.class_name -}(JClass<'j>);
+
+impl<'j> { obj.class_name -} \{
+    fn java_class_desc() -> &'static str \{
+        "{- obj.name -}"
+    }
+}
 
 impl<'j> std::ops::Deref for { obj.class_name -} \{
     type Target = JClass<'j>;
@@ -65,14 +111,45 @@ impl<'j> std::ops::Deref for { obj.class_name -} \{
     }
 }
 
+impl<'j> FromJavaToRust for { obj.class_name } \{
+    type Rust = { obj.class_name };
+
+    fn java_to_rust(self) -> Self::Rust \{
+        self
+    }
+
+    fn rust_to_java(rust: Self::Rust) -> Self \{
+        rust
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct { obj.obj_name -}(JObject);
+
+impl<'j> { obj.obj_name -} \{
+    fn java_class_desc() -> &'static str \{
+        "{- obj.name -}"
+    }
+}
 
 impl<'j> std::ops::Deref for { obj.obj_name -} \{
     type Target = JObject<'j>;
 
     fn deref(&self) -> &Self::Target \{
         &self.0
+    }
+}
+
+impl<'j> FromJavaToRust for { obj.obj_name } \{
+    type Rust = { obj.obj_name };
+
+    fn java_to_rust(self) -> Self::Rust \{
+        self
+    }
+
+    fn rust_to_java(rust: Self::Rust) -> Self \{
+        rust
     }
 }
 {{ endfor }}
@@ -89,22 +166,28 @@ pub(crate) fn new_engine() -> Result<TinyTemplate<'static>, Error> {
 #[derive(Serialize)]
 pub(crate) struct RustFfi<'a> {
     pub(crate) class_name: Cow<'a, str>,
+    pub(crate) type_name: String,
+    pub(crate) trait_name: String,
+    pub(crate) trait_impl: String,
     pub(crate) functions: Vec<Function>,
 }
 
 #[derive(Serialize)]
 pub(crate) struct Function {
     pub(crate) name: String,
+    pub(crate) ffi_name: String,
     pub(crate) signature: String,
     pub(crate) class_or_this: String,
     pub(crate) arguments: Vec<Arg>,
     pub(crate) result: String,
+    pub(crate) rs_result: String,
 }
 
 #[derive(Serialize)]
 pub(crate) struct Arg {
     pub(crate) name: String,
     pub(crate) ty: String,
+    pub(crate) rs_ty: String,
 }
 
 #[derive(Serialize)]
@@ -140,7 +223,7 @@ pub(crate) enum Return {
 }
 
 impl Return {
-    pub(crate) fn from_java(field_type: &ReturnDescriptor) -> Self {
+    pub(crate) fn from_java(field_type: &ReturnDescriptor<'_>) -> Self {
         match field_type {
             ReturnDescriptor::Void => Self::Void,
             ReturnDescriptor::Return(val) => Self::Val(JniType::from_java(val)),
@@ -151,6 +234,13 @@ impl Return {
         match self {
             Self::Void => "()".to_string(),
             Self::Val(ty) => ty.to_jni_type_name(),
+        }
+    }
+
+    pub(crate) fn to_rs_type_name(&self) -> String {
+        match self {
+            Self::Void => "()".to_string(),
+            Self::Val(ty) => ty.to_rs_type_name(),
         }
     }
 }
@@ -187,17 +277,35 @@ pub(crate) enum JniType {
 
 impl JniType {
     /// Outputs the form needed in jni function interfaces
+    ///
+    /// These must all be marked `#[repr(transparent)]` in order to be used at the FFI boundary
     pub(crate) fn to_jni_type_name(&self) -> String {
         match self {
-            Self::Ty(BaseJniTy::Jbyte) => std::any::type_name::<sys::jbyte>().into(),
-            Self::Ty(BaseJniTy::Jchar) => std::any::type_name::<sys::jchar>().into(),
-            Self::Ty(BaseJniTy::Jdouble) => std::any::type_name::<sys::jdouble>().into(),
-            Self::Ty(BaseJniTy::Jfloat) => std::any::type_name::<sys::jfloat>().into(),
-            Self::Ty(BaseJniTy::Jint) => std::any::type_name::<sys::jint>().into(),
-            Self::Ty(BaseJniTy::Jlong) => std::any::type_name::<sys::jlong>().into(),
-            Self::Ty(BaseJniTy::Jshort) => std::any::type_name::<sys::jshort>().into(),
-            Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<sys::jboolean>().into(),
-            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_jni_type_name().into(),
+            Self::Ty(BaseJniTy::Jbyte) => std::any::type_name::<JavaByte>().into(),
+            Self::Ty(BaseJniTy::Jchar) => std::any::type_name::<JavaChar>().into(),
+            Self::Ty(BaseJniTy::Jdouble) => std::any::type_name::<JavaDouble>().into(),
+            Self::Ty(BaseJniTy::Jfloat) => std::any::type_name::<JavaFloat>().into(),
+            Self::Ty(BaseJniTy::Jint) => std::any::type_name::<JavaInt>().into(),
+            Self::Ty(BaseJniTy::Jlong) => std::any::type_name::<JavaLong>().into(),
+            Self::Ty(BaseJniTy::Jshort) => std::any::type_name::<JavaShort>().into(),
+            Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<JavaBoolean>().into(),
+            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_jni_type_name(),
+            // in JNI the array is always jarray
+            Self::Jarray { .. } => std::any::type_name::<sys::jarray>().into(),
+        }
+    }
+
+    pub(crate) fn to_rs_type_name(&self) -> String {
+        match self {
+            Self::Ty(BaseJniTy::Jbyte) => std::any::type_name::<i8>().into(),
+            Self::Ty(BaseJniTy::Jchar) => std::any::type_name::<char>().into(),
+            Self::Ty(BaseJniTy::Jdouble) => std::any::type_name::<f64>().into(),
+            Self::Ty(BaseJniTy::Jfloat) => std::any::type_name::<f32>().into(),
+            Self::Ty(BaseJniTy::Jint) => std::any::type_name::<i32>().into(),
+            Self::Ty(BaseJniTy::Jlong) => std::any::type_name::<i64>().into(),
+            Self::Ty(BaseJniTy::Jshort) => std::any::type_name::<i16>().into(),
+            Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<bool>().into(),
+            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_jni_type_name(),
             // in JNI the array is always jarray
             Self::Jarray { .. } => std::any::type_name::<sys::jarray>().into(),
         }

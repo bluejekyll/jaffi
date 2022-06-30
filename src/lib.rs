@@ -155,7 +155,7 @@ impl<'a> Jaffi<'a> {
                 this_class.to_jni_type_name().to_string()
             };
 
-            let fn_name = if *method_names
+            let fn_ffi_name = if *method_names
                 .get(&method.name)
                 .expect("should have been added above")
                 > 1
@@ -187,24 +187,38 @@ impl<'a> Jaffi<'a> {
                 .map(move |(i, ty)| Arg {
                     name: format!("arg{i}"),
                     ty: ty.to_jni_type_name(),
+                    rs_ty: ty.to_rs_type_name(),
                 })
                 .collect();
             let result = Return::from_java(&method.descriptor.result);
 
             let function = Function {
-                name: fn_name,
+                name: method.name.to_string(),
+                ffi_name: fn_ffi_name,
                 signature: descriptor,
                 class_or_this,
                 arguments,
                 result: result.to_jni_type_name(),
+                rs_result: result.to_rs_type_name(),
             };
 
             functions.push(function);
         }
 
+        let trait_name = Path::new(&*class_file.this_class)
+            .file_name()
+            .expect("no file component")
+            .to_string_lossy()
+            .to_string()
+            + "Rs";
+        let trait_impl = format!("{trait_name}Impl");
+
         // build up the rendering information.
         let context = template::RustFfi {
             class_name: class_file.this_class.clone(),
+            type_name: escape_for_abi(&class_file.this_class),
+            trait_name,
+            trait_impl,
             functions,
         };
 
