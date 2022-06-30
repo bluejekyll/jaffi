@@ -31,68 +31,19 @@ pub(crate) static RUST_FFI_OBJ: &str = "RUST_FFI_OBJ";
 ///
 /// This generates the trait for each of the FFI functions.
 static RUST_FFI_TEMPLATE: &str = r#"
+use std::ops::Deref;
+
 use jaffi_support::\{
     FromJavaToRust,
     jni::\{
         JNIEnv,
-        objects::\{JByteBuffer, JClass},
+        objects::\{JByteBuffer, JClass, JObject},
         self,
         sys::jlong,
     }
 };
 
-use super::{- trait_impl -};
-
-pub trait { trait_name }<'j> \{
-    /// Costruct this type from the Java object
-    /// 
-    /// Implementations should consider storing both values as types on the implementation object
-    fn from_env(env: JNIEnv<'j>) -> Self;
-{{ for function in functions }}
-    fn { function.fn_ffi_name }(
-        &self,
-        this: { function.class_or_this -},
-        {{- for arg in function.arguments }}
-        { arg.name }: { arg.rs_ty },
-        {{- endfor }}    
-    ) -> { function.rs_result -};
-{{ endfor }}
-}
-
-{{ for function in functions }}
-/// JNI method signature { function.signature }
-#[no_mangle]
-pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
-    env: JNIEnv<'j>,
-    this: { function.class_or_this -},
-    {{- for arg in function.arguments }}
-    { arg.name }: { arg.ty },
-    {{- endfor }}
-) -> { function.result } \{
-    let myself = { trait_impl }::from_env(env);
-    
-    {{- for arg in function.arguments }}
-    let { arg.name } = { arg.name }.java_to_rust();
-    {{- endfor }}
-    
-    let result = myself.{ function.fn_ffi_name } (
-        this,
-        {{- for arg in function.arguments }}
-        { arg.name },
-        {{- endfor }}
-    );
-
-    { function.result -}::rust_to_java(result)
-}
-{{ endfor }}
-"#;
-
-/// This will generate common support objects.
-static RUST_FFI_OBJ_TEMPLATE: &str = r#"
-use std::ops::Deref;
-
-use jaffi_support::jni::\{self, objects::\{JClass, JObject}};
-
+{# ** The Support Types, Java Object and Class wrappers, etc ** #}
 {{ for obj in objects }}
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
@@ -154,6 +105,62 @@ impl<'j> FromJavaToRust for { obj.obj_name } \{
     }
 }
 {{ endfor }}
+
+{# ** The Support Types, Java Object and Class wrappers, etc ** #}
+
+{{ for class in class_ffis}}
+// This is the trait developers must implement
+use super::{- class.trait_impl -};
+
+pub trait { class.trait_name }<'j> \{
+    /// Costruct this type from the Java object
+    /// 
+    /// Implementations should consider storing both values as types on the implementation object
+    fn from_env(env: JNIEnv<'j>) -> Self;
+{{ for function in class.functions }}
+    fn { function.fn_ffi_name }(
+        &self,
+        this: { function.class_or_this -},
+        {{- for arg in function.arguments }}
+        { arg.name }: { arg.rs_ty },
+        {{- endfor }}    
+    ) -> { function.rs_result -};
+{{ endfor }}
+}
+
+{{ for function in class.functions }}
+/// JNI method signature { function.signature }
+#[no_mangle]
+pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
+    env: JNIEnv<'j>,
+    this: { function.class_or_this -},
+    {{- for arg in function.arguments }}
+    { arg.name }: { arg.ty },
+    {{- endfor }}
+) -> { function.result } \{
+    let myself = { class.trait_impl }::from_env(env);
+    
+    {{- for arg in function.arguments }}
+    let { arg.name } = { arg.name }.java_to_rust();
+    {{- endfor }}
+    
+    let result = myself.{ function.fn_ffi_name } (
+        this,
+        {{- for arg in function.arguments }}
+        { arg.name },
+        {{- endfor }}
+    );
+
+    { function.result -}::rust_to_java(result)
+}
+{{ endfor }}
+{{ endfor }}
+"#;
+
+/// This will generate common support objects.
+static RUST_FFI_OBJ_TEMPLATE: &str = r#"
+
+
 "#;
 
 pub(crate) fn new_engine() -> Result<TinyTemplate<'static>, Error> {
@@ -165,8 +172,14 @@ pub(crate) fn new_engine() -> Result<TinyTemplate<'static>, Error> {
 }
 
 #[derive(Serialize)]
-pub(crate) struct RustFfi<'a> {
-    pub(crate) class_name: Cow<'a, str>,
+pub(crate) struct RustFfi {
+    pub(crate) class_ffis: Vec<ClassFfi>,
+    pub(crate) objects: Vec<Object>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ClassFfi {
+    pub(crate) class_name: String,
     pub(crate) type_name: String,
     pub(crate) trait_name: String,
     pub(crate) trait_impl: String,
@@ -191,11 +204,6 @@ pub(crate) struct Arg {
     pub(crate) name: String,
     pub(crate) ty: String,
     pub(crate) rs_ty: String,
-}
-
-#[derive(Serialize)]
-pub(crate) struct RustFfiObjects {
-    pub(crate) objects: Vec<Object>,
 }
 
 #[derive(Serialize)]

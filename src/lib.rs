@@ -24,7 +24,7 @@ mod error;
 mod template;
 
 pub use error::{Error, ErrorKind};
-use template::{Arg, Function, JniType, Object, ObjectType, Return};
+use template::{Arg, ClassFfi, Function, JniType, Object, ObjectType, Return, RustFfi};
 use tinytemplate::TinyTemplate;
 
 use std::{
@@ -69,6 +69,7 @@ impl<'a> Jaffi<'a> {
 
         // shared buffer for classes that are read into memory
         let mut class_buf = Vec::<u8>::new();
+        let mut class_ffis = Vec::<ClassFfi>::new();
         let mut argument_types = HashSet::<ObjectType>::new();
 
         // create all the classes
@@ -96,22 +97,20 @@ impl<'a> Jaffi<'a> {
                 );
             }
 
-            let objects = self.generate_native_impls(&class_buf, &template)?;
+            let (class_ffi, objects) = self.generate_native_impls(&class_buf)?;
+            class_ffis.extend(class_ffi);
             argument_types.extend(objects);
         }
 
         // create the wrapper types
-        self.generate_support_types(argument_types, &template)?;
+        let objects = self.generate_support_types(argument_types)?;
 
-        Ok(())
-    }
+        let context = RustFfi {
+            class_ffis,
+            objects,
+        };
 
-    /// Returns list of Support types needed as interfaces in the ABI interfaces
-    fn generate_native_impls<'b>(
-        &self,
-        class_bytes: &'b [u8],
-        template: &TinyTemplate<'_>,
-    ) -> Result<HashSet<ObjectType>, Error> {
+        // render the file
         let output_dir = &Cow::Borrowed(Path::new("."));
         let output_dir = if let Some(ref dir) = self.output_dir {
             dir
@@ -119,6 +118,24 @@ impl<'a> Jaffi<'a> {
             output_dir
         };
 
+        // we always generate to the same file name
+        let rust_file = PathBuf::from(output_dir.as_ref())
+            .join("generated_jaffi")
+            .with_extension("rs");
+
+        let rendered = template.render(template::RUST_FFI, &context)?;
+
+        let mut rust_file = File::create(rust_file)?;
+        rust_file.write_all(rendered.as_bytes())?;
+
+        Ok(())
+    }
+
+    /// Returns list of Support types needed as interfaces in the ABI interfaces
+    fn generate_native_impls(
+        &self,
+        class_bytes: &[u8],
+    ) -> Result<(Option<ClassFfi>, HashSet<ObjectType>), Error> {
         let mut opts = ParseOptions::default();
         opts.parse_bytecode(false);
         let class_file =
@@ -132,7 +149,7 @@ impl<'a> Jaffi<'a> {
 
         // do nothing, no native methods found...
         if native_methods.is_empty() {
-            return Ok(HashSet::new());
+            return Ok((None, HashSet::new()));
         }
 
         let method_names = native_methods
@@ -225,58 +242,30 @@ impl<'a> Jaffi<'a> {
         let trait_impl = format!("{trait_name}Impl");
 
         // build up the rendering information.
-        let context = template::RustFfi {
-            class_name: class_file.this_class.clone(),
+        let class_ffi = template::ClassFfi {
+            class_name: class_file.this_class.to_string(),
             type_name: escape_for_abi(&class_file.this_class),
             trait_name,
             trait_impl,
             functions,
         };
 
-        // the file name will be the full class name
-        let mut rust_file = PathBuf::from(output_dir.as_ref())
-            .join(escape_for_abi(&class_file.this_class))
-            .with_extension("rs");
-
-        let rendered = template.render(template::RUST_FFI, &context)?;
-
-        let mut rust_file = File::create(rust_file)?;
-        rust_file.write_all(rendered.as_bytes())?;
-
-        Ok(argument_objects)
+        Ok((Some(class_ffi), argument_objects))
     }
 
-    fn generate_support_types(
-        &self,
-        mut types: HashSet<ObjectType>,
-        template: &TinyTemplate<'_>,
-    ) -> Result<(), Error> {
-        let output_dir = &Cow::Borrowed(Path::new("."));
-        let output_dir = if let Some(ref dir) = self.output_dir {
-            dir
-        } else {
-            output_dir
-        };
+    fn generate_support_types(&self, mut types: HashSet<ObjectType>) -> Result<Vec<Object>, Error> {
+        let objects = types
+            .drain()
+            .filter_map(|obj| {
+                if let ObjectType::Object(_) = obj {
+                    Some(Object::from(obj))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
-        let context = template::RustFfiObjects {
-            objects: types
-                .drain()
-                .filter_map(|obj| {
-                    if let ObjectType::Object(_) = obj {
-                        Some(Object::from(obj))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>(),
-        };
-        let rendered = template.render(template::RUST_FFI_OBJ, &context)?;
-
-        let rust_file = output_dir.join("support_types").with_extension("rs");
-        let mut rust_file = File::create(rust_file)?;
-        rust_file.write_all(rendered.as_bytes())?;
-
-        Ok(())
+        Ok(objects)
     }
 }
 

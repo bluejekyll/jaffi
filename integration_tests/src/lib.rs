@@ -2,12 +2,11 @@ use jaffi_support::jni::JNIEnv;
 
 use crate::net_bluejekyll::{net_bluejekyll_NativeClass, net_bluejekyll_NativeClassClass};
 
-struct NativeClassRsImpl {}
-
 mod net_bluejekyll {
-    include!(concat!(env!("OUT_DIR"), "/support_types.rs"));
-    include!(concat!(env!("OUT_DIR"), "/net_bluejekyll_NativeClass.rs"));
+    include!(concat!(env!("OUT_DIR"), "/generated_jaffi.rs"));
 }
+
+struct NativeClassRsImpl {}
 
 impl<'j> net_bluejekyll::NativeClassRs<'j> for NativeClassRsImpl {
     /// Costruct this type from the Java object
