@@ -40,6 +40,8 @@ use typed_builder::TypedBuilder;
 
 use crate::template::BaseJniTy;
 
+pub use jaffi_support;
+
 /// A utility for generating Rust FFI implementations from Java class files that contain `native` functions.
 #[derive(TypedBuilder)]
 pub struct Jaffi<'a> {
@@ -128,6 +130,11 @@ impl<'a> Jaffi<'a> {
             .filter(|method_info| method_info.access_flags.contains(MethodAccessFlags::NATIVE))
             .collect::<Vec<_>>();
 
+        // do nothing, no native methods found...
+        if native_methods.is_empty() {
+            return Ok(HashSet::new());
+        }
+
         let method_names = native_methods
             .iter()
             .fold(HashMap::new(), |mut map, method| {
@@ -155,17 +162,19 @@ impl<'a> Jaffi<'a> {
                 this_class.to_jni_type_name().to_string()
             };
 
+            let fn_class_ffi_name = escape_for_abi(&class_file.this_class);
             let fn_ffi_name = if *method_names
                 .get(&method.name)
                 .expect("should have been added above")
                 > 1
             {
                 // need to long abi name
-                method_to_long_abi_name(&class_file.this_class, &method.name, &descriptor)
+                method_to_long_abi_name(&method.name, &descriptor)
             } else {
                 // short is ok (faster lookup in dynamic linking)
-                method_to_abi_name(&class_file.this_class, &method.name)
+                method_to_abi_name(&method.name)
             };
+            let fn_export_ffi_name = method_to_export_abi_name(&fn_class_ffi_name, &fn_ffi_name);
 
             let arg_types = method
                 .descriptor
@@ -194,7 +203,9 @@ impl<'a> Jaffi<'a> {
 
             let function = Function {
                 name: method.name.to_string(),
-                ffi_name: fn_ffi_name,
+                fn_export_ffi_name,
+                fn_class_ffi_name,
+                fn_ffi_name,
                 signature: descriptor,
                 class_or_this,
                 arguments,
@@ -346,14 +357,13 @@ fn lookup_from_path(classpath: &Path, class: &Path, bytes: &mut Vec<u8>) -> Resu
 ///
 /// Native methods can also be explicitly linked using the RegisterNatives function. Be aware that RegisterNatives can change the documented behavior of the JVM (including cryptographic algorithms, correctness, security, type safety), by changing the native code to be executed for a given native Java method. Therefore use applications that have native libraries utilizing the RegisterNatives function with caution.
 /// ```
-fn method_to_abi_name(class_name: &str, method_name: &str) -> String {
-    let abi_class_name = escape_for_abi(class_name);
+fn method_to_abi_name(method_name: &str) -> String {
     let abi_method_name = escape_for_abi(method_name);
 
-    format!("Java_{abi_class_name}_{abi_method_name}")
+    format!("{abi_method_name}")
 }
 
-fn method_to_long_abi_name(class_name: &str, method_name: &str, descriptor: &str) -> String {
+fn method_to_long_abi_name(method_name: &str, descriptor: &str) -> String {
     // strip the '(', ')', and return from the descriptor
     let descriptor = descriptor.strip_prefix('(').unwrap_or(descriptor);
     let descriptor = if let Some(pos) = descriptor.find(")") {
@@ -362,10 +372,14 @@ fn method_to_long_abi_name(class_name: &str, method_name: &str, descriptor: &str
         descriptor
     };
 
-    let abi_method = method_to_abi_name(class_name, method_name);
+    let abi_method = method_to_abi_name(method_name);
     let abi_descriptor = escape_for_abi(descriptor);
 
     format!("{abi_method}__{abi_descriptor}")
+}
+
+fn method_to_export_abi_name(class_abi_name: &str, method_abi_name: &str) -> String {
+    format!("Java_{class_abi_name}_{method_abi_name}")
 }
 
 fn escape_for_abi(name: &str) -> String {
@@ -397,18 +411,15 @@ mod tests {
 
     #[test]
     fn test_escape_name() {
-        assert_eq!(method_to_abi_name("p.q.r.A", "f"), "Java_p_q_r_A_f");
+        assert_eq!(escape_for_abi("p.q.r.A"), "p_q_r_A");
         assert_eq!(
-            method_to_long_abi_name("p.q.r.A", "f", "(ILjava.lang.String;)D"),
-            "Java_p_q_r_A_f__ILjava_lang_String_2"
+            method_to_long_abi_name("f", "(ILjava.lang.String;)D"),
+            "f__ILjava_lang_String_2"
         );
     }
 
     #[test]
     fn test_escape_name_unicode() {
-        assert_eq!(
-            method_to_abi_name("p.q.r.A", "i❤'🦀"),
-            "Java_p_q_r_A_i_02764_027_01f980"
-        );
+        assert_eq!(method_to_abi_name("i❤'🦀"), "i_02764_027_01f980");
     }
 }

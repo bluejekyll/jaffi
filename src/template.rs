@@ -16,7 +16,7 @@ use jaffi_support::{
         objects::{JByteBuffer, JClass, JObject, JString, JThrowable},
         sys,
     },
-    JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort,
+    JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
 };
 use serde::Serialize;
 
@@ -31,25 +31,26 @@ pub(crate) static RUST_FFI_OBJ: &str = "RUST_FFI_OBJ";
 ///
 /// This generates the trait for each of the FFI functions.
 static RUST_FFI_TEMPLATE: &str = r#"
-use jaffi_support::jni::\{
-    JNIEnv,
-    objects::\{JByteBuffer, JClass},
-    self,
-    sys::jlong,
+use jaffi_support::\{
+    FromJavaToRust,
+    jni::\{
+        JNIEnv,
+        objects::\{JByteBuffer, JClass},
+        self,
+        sys::jlong,
+    }
 };
 
 use super::{- trait_impl -};
 
-trait { trait_name }<'j> \{
+pub trait { trait_name }<'j> \{
     /// Costruct this type from the Java object
     /// 
     /// Implementations should consider storing both values as types on the implementation object
     fn from_env(env: JNIEnv<'j>) -> Self;
-
-    /// Get the java object that backs this type
-    fn java_obj(&self) -> &{ type_name -}<'j>;
 {{ for function in functions }}
-    fn { function.name }(
+    fn { function.fn_ffi_name }(
+        &self,
         this: { function.class_or_this -},
         {{- for arg in function.arguments }}
         { arg.name }: { arg.rs_ty },
@@ -61,27 +62,27 @@ trait { trait_name }<'j> \{
 {{ for function in functions }}
 /// JNI method signature { function.signature }
 #[no_mangle]
-pub extern "system" fn { function.ffi_name -}<'j>(
+pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     env: JNIEnv<'j>,
     this: { function.class_or_this -},
     {{- for arg in function.arguments }}
     { arg.name }: { arg.ty },
     {{- endfor }}
 ) -> { function.result } \{
-    let myself = { trait_name }::from_java(env);
+    let myself = { trait_impl }::from_env(env);
     
     {{- for arg in function.arguments }}
     let { arg.name } = { arg.name }.java_to_rust();
     {{- endfor }}
     
-    let result = myself.{ function.name } (
-        myself,
+    let result = myself.{ function.fn_ffi_name } (
+        this,
         {{- for arg in function.arguments }}
         { arg.name },
         {{- endfor }}
     );
 
-    <{ function.result -}>::rust_to_java(result)
+    { function.result -}::rust_to_java(result)
 }
 {{ endfor }}
 "#;
@@ -125,7 +126,7 @@ impl<'j> FromJavaToRust for { obj.class_name } \{
 
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-pub struct { obj.obj_name -}(JObject);
+pub struct { obj.obj_name -}(JObject<'j>);
 
 impl<'j> { obj.obj_name -} \{
     fn java_class_desc() -> &'static str \{
@@ -175,7 +176,9 @@ pub(crate) struct RustFfi<'a> {
 #[derive(Serialize)]
 pub(crate) struct Function {
     pub(crate) name: String,
-    pub(crate) ffi_name: String,
+    pub(crate) fn_export_ffi_name: String,
+    pub(crate) fn_class_ffi_name: String,
+    pub(crate) fn_ffi_name: String,
     pub(crate) signature: String,
     pub(crate) class_or_this: String,
     pub(crate) arguments: Vec<Arg>,
@@ -232,14 +235,14 @@ impl Return {
 
     pub(crate) fn to_jni_type_name(&self) -> String {
         match self {
-            Self::Void => "()".to_string(),
+            Self::Void => std::any::type_name::<JavaVoid>().to_string(),
             Self::Val(ty) => ty.to_jni_type_name(),
         }
     }
 
     pub(crate) fn to_rs_type_name(&self) -> String {
         match self {
-            Self::Void => "()".to_string(),
+            Self::Void => std::any::type_name::<()>().to_string(),
             Self::Val(ty) => ty.to_rs_type_name(),
         }
     }
@@ -305,7 +308,7 @@ impl JniType {
             Self::Ty(BaseJniTy::Jlong) => std::any::type_name::<i64>().into(),
             Self::Ty(BaseJniTy::Jshort) => std::any::type_name::<i16>().into(),
             Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<bool>().into(),
-            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_jni_type_name(),
+            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_rs_type_name(),
             // in JNI the array is always jarray
             Self::Jarray { .. } => std::any::type_name::<sys::jarray>().into(),
         }
@@ -378,6 +381,10 @@ impl ObjectType {
     pub(crate) fn to_jni_class_name(&self) -> String {
         // add the lifetime
         self.to_type_name_base() + "Class<'j>"
+    }
+
+    fn to_rs_type_name(&self) -> String {
+        self.to_type_name_base()
     }
 }
 

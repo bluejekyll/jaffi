@@ -9,7 +9,8 @@ author = "benjaminfry@me.com"
 
 [workspace]
 members = [
-    "jaffi_support"
+    "jaffi_support",
+    "integration_tests"
 ]
 
 [dependencies]

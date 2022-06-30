@@ -82,6 +82,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jaffi_integration_tests"
+version = "0.1.0"
+dependencies = [
+ "jaffi",
+ "jaffi_support",
+]
+
+[[package]]
 name = "jaffi_support"
 version = "0.1.0"
 dependencies = [

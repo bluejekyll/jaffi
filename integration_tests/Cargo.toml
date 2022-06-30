@@ -1,0 +1,12 @@
+[package]
+name = "jaffi_integration_tests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+jaffi = { version = "0.1.0", path = "../" }
+
+[dependencies]
+jaffi_support = { version = "0.1.0", path = "../jaffi_support" }
