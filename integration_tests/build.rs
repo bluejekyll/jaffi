@@ -54,13 +54,10 @@ fn find_files(mut search_paths: Vec<Cow<'_, Path>>, extension: &str) -> Vec<Path
 }
 
 fn compile_java() {
-    let java_files = find_java_files();
-    let java_files = java_files.into_iter().fold(String::new(), |mut arg, file| {
-        arg.push_str(&file.display().to_string());
-        arg.push(' ');
-        arg
-    });
-    let java_files = java_files.trim();
+    let java_files = find_java_files()
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
 
     // create the target dir
     let class_path = class_path().display().to_string();
@@ -71,7 +68,7 @@ fn compile_java() {
         .arg(&class_path)
         .arg("-h")
         .arg(class_path)
-        .arg(java_files);
+        .args(java_files);
 
     eprintln!("javac: {cmd:?}");
 
