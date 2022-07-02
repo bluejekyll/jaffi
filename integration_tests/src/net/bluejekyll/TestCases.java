@@ -15,6 +15,7 @@ public class TestCases {
         test_void_long2();
         test_long_int_int();
         test_add_values_native();
+        test_print_hello();
     }
 
     static void test_void_void() {
@@ -53,8 +54,16 @@ public class TestCases {
 
         long expect = (long) Integer.MAX_VALUE + (long) Integer.MAX_VALUE;
         if (ret != expect) {
-                    
-            throw new RuntimeException("Expected " + (long) Integer.MAX_VALUE + (long) Integer.MAX_VALUE + ", got: " + ret);
+
+            throw new RuntimeException(
+                    "Expected " + (long) Integer.MAX_VALUE + (long) Integer.MAX_VALUE + ", got: " + ret);
         }
+    }
+
+    static void test_print_hello() {
+        NativeClass.print_hello_native_static();
+
+        NativeClass obj = new NativeClass();
+        obj.print_hello_native();
     }
 }

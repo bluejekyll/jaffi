@@ -278,6 +278,7 @@ impl<'a> Jaffi<'a> {
 
             let is_static = method.access_flags.contains(MethodAccessFlags::STATIC);
 
+            let object_java_desc = class_file.this_class.to_string();
             let class_ffi_name = this_class.to_jni_class_name();
             let object_ffi_name = this_class.to_jni_type_name();
             let fn_ffi_name = if *method_names
@@ -321,6 +322,7 @@ impl<'a> Jaffi<'a> {
 
             let function = Function {
                 name: method.name.to_string(),
+                object_java_desc,
                 fn_export_ffi_name,
                 class_ffi_name,
                 object_ffi_name,

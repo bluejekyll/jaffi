@@ -1,6 +1,8 @@
 use jaffi_support::jni::JNIEnv;
 
-use crate::net_bluejekyll::{net_bluejekyll_NativeClass, net_bluejekyll_NativeClassClass};
+use crate::net_bluejekyll::{
+    net_bluejekyll_NativeClass, net_bluejekyll_NativeClassClass, Static_net_bluejekyll_NativeClass,
+};
 
 mod net_bluejekyll {
     include!(concat!(env!("OUT_DIR"), "/generated_jaffi.rs"));
@@ -48,5 +50,13 @@ impl<'j> net_bluejekyll::NativeClassRs<'j> for NativeClassRsImpl<'j> {
         let ret = this.add_1values(self.env, arg0, arg1);
         println!("add_1values_1native: got result from java: {ret}");
         ret
+    }
+
+    fn print_1hello_1native(&self, this: net_bluejekyll_NativeClass<'j>) -> () {
+        this.print_1hello(self.env)
+    }
+
+    fn print_1hello_1native_1static(&self, this: net_bluejekyll_NativeClassClass<'j>) -> () {
+        this.print_1hello(self.env)
     }
 }

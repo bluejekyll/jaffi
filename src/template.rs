@@ -25,7 +25,7 @@ use tinytemplate::TinyTemplate;
 use crate::Error;
 
 pub(crate) static RUST_FFI: &str = "RUST_FFI";
-pub(crate) static RUST_FFI_OBJ: &str = "RUST_FFI_OBJ";
+pub(crate) static JAVA_FUNCTION_CALL: &str = "JAVA_FUNCTION_CALL";
 
 /// Template for the generated rust files.
 ///
@@ -48,6 +48,8 @@ use jaffi_support::\{
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 pub struct { obj.class_name -}(JClass<'j>);
+
+impl<'j> { obj.static_trait_name } for { obj.class_name } \{}
 
 impl<'j> { obj.class_name -} \{
     fn java_class_desc() -> &'static str \{
@@ -79,6 +81,8 @@ impl<'j> FromJavaToRust for { obj.class_name } \{
 #[repr(transparent)]
 pub struct { obj.obj_name -}(JObject<'j>);
 
+impl<'j> { obj.static_trait_name } for { obj.obj_name } \{}
+
 impl<'j> { obj.obj_name -} \{
     /// Returns the type name in java, e.g. `Object` is `"java/lang/Object"`
     pub fn java_class_desc() -> &'static str \{
@@ -87,39 +91,15 @@ impl<'j> { obj.obj_name -} \{
 
     {{ for function in obj.methods }}
     {{ if not function.is_static }}
-    /// A wrapper for the java function { function.name }
-    /// 
-    /// # Arguments
-    /// 
-    /// * `env` - this should be the same JNIEnv "owning" this object
-    pub fn { function.fn_ffi_name }(
-        &self,
-        env: JNIEnv<'j>,
-        {{- for arg in function.arguments }}
-        { arg.name }: { arg.rs_ty },
-        {{- endfor }}  
-    ) -> { function.rs_result -} \{
-        let args: &[JValue<'j>] = &[
-            {{- for arg in function.arguments }}
-            JValue::from({ arg.name }),
-            {{- endfor }} 
-        ];
+    {{ call JAVA_FUNCTION_CALL with function }}
+    {{ endif }}
+    {{ endfor}}
+}
 
-        let jvalue = match env.call_method(
-            self.0,
-            "{ function.name }",
-            "{ function.signature }",
-            args
-        ) \{
-            Ok(jvalue) => jvalue,
-            Err(e) => panic!("error calling java, \{e}"),
-        };
-
-        match jvalue.try_into() \{
-            Ok(ret) => ret,
-            Err(e) => panic!("could not convert to rust from jvalue, \{e}"),
-        }
-    }
+pub trait { obj.static_trait_name } \{
+    {{ for function in obj.methods }}
+    {{ if function.is_static }}
+    {{ call JAVA_FUNCTION_CALL with function }}
     {{ endif }}
     {{ endfor}}
 }
@@ -202,16 +182,59 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
 {{ endfor }}
 "#;
 
-/// This will generate common support objects.
-static RUST_FFI_OBJ_TEMPLATE: &str = r#"
+/// This expects the Function type as the serialized data
+static JAVA_FUNCTION_CALL_TEMPLATE: &str = r#"
+    /// A wrapper for the java function { name }
+    /// 
+    /// # Arguments
+    /// 
+    /// * `env` - this should be the same JNIEnv "owning" this object
+    {{ if not is_static }}pub{{ endif }} fn { fn_ffi_name }(
+        &self,
+        env: JNIEnv<'_>,
+        {{- for arg in arguments }}
+        { arg.name }: { arg.rs_ty },
+        {{- endfor }}  
+    ) -> { rs_result -} \{
+        let args: &[JValue<'_>] = &[
+            {{- for arg in arguments }}
+            JValue::from({ arg.name }),
+            {{- endfor }} 
+        ];
 
+        {{ if is_static }}
+        let jvalue = match env.call_static_method(
+            "{ object_java_desc }",
+            "{ name }",
+            "{ signature }",
+            args
+        ) \{
+            Ok(jvalue) => jvalue,
+            Err(e) => panic!("error calling java, \{e}"),
+        };
+        {{ else }}
+        let jvalue = match env.call_method(
+            self.0,
+            "{ name }",
+            "{ signature }",
+            args
+        ) \{
+            Ok(jvalue) => jvalue,
+            Err(e) => panic!("error calling java, \{e}"),
+        };
+        {{ endif }}
 
+        match jvalue.try_into() \{
+            Ok(ret) => ret,
+            Err(e) => panic!("could not convert to rust from jvalue, \{e}"),
+        }
+    }
 "#;
 
 pub(crate) fn new_engine() -> Result<TinyTemplate<'static>, Error> {
     let mut tt = TinyTemplate::new();
     tt.add_template(RUST_FFI, RUST_FFI_TEMPLATE)?;
-    tt.add_template(RUST_FFI_OBJ, RUST_FFI_OBJ_TEMPLATE)?;
+    tt.add_template(JAVA_FUNCTION_CALL, JAVA_FUNCTION_CALL_TEMPLATE)?;
     tt.set_default_formatter(&tinytemplate::format_unescaped);
     Ok(tt)
 }
@@ -234,6 +257,7 @@ pub(crate) struct ClassFfi {
 #[derive(Serialize)]
 pub(crate) struct Function {
     pub(crate) name: String,
+    pub(crate) object_java_desc: String,
     pub(crate) fn_export_ffi_name: String,
     pub(crate) class_ffi_name: String,
     pub(crate) object_ffi_name: String,
@@ -257,6 +281,7 @@ pub(crate) struct Object {
     pub(crate) java_name: String,
     pub(crate) class_name: String,
     pub(crate) obj_name: String,
+    pub(crate) static_trait_name: String,
     pub(crate) methods: Vec<Function>,
 }
 
@@ -265,11 +290,13 @@ impl From<ObjectType> for Object {
         let java_name = ty.as_descriptor().to_string();
         let class_name = ty.to_jni_class_name();
         let obj_name = ty.to_jni_type_name();
+        let static_trait_name = format!("Static_{}", ty.to_rs_type_name());
 
         Object {
             java_name,
             class_name,
             obj_name,
+            static_trait_name,
             methods: Vec::new(),
         }
     }

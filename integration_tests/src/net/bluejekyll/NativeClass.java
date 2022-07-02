@@ -19,4 +19,12 @@ public class NativeClass {
     public long add_values(int arg1, int arg2) {
         return (long) arg1 + (long) arg2;
     }
+
+    public static native void print_hello_native_static();
+
+    public native void print_hello_native();
+
+    public static void print_hello() {
+        System.out.println("hello!");
+    }
 }
