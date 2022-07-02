@@ -12,4 +12,11 @@ public class NativeClass {
 
     // a return type
     public native long long_int_int(int foo, int bar);
+
+    // a native method that internally calls the object method add_values
+    public native long add_values_native(int arg1, int arg2);
+
+    public long add_values(int arg1, int arg2) {
+        return (long) arg1 + (long) arg2;
+    }
 }

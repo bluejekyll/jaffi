@@ -6,6 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 pub use jni;
+use jni::{objects::JObject, strings::JavaStr, JNIEnv};
 
 pub trait FromJavaToRust {
     type Rust;

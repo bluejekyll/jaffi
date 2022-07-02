@@ -37,4 +37,16 @@ impl<'j> net_bluejekyll::NativeClassRs<'j> for NativeClassRsImpl<'j> {
         println!("void_1long__JI: {arg0} + {arg1} = {ret}");
         ret
     }
+
+    fn add_1values_1native(
+        &self,
+        this: net_bluejekyll_NativeClass<'j>,
+        arg0: i32,
+        arg1: i32,
+    ) -> i64 {
+        println!("add_1values_1native: calling java with: {arg0}, {arg1}");
+        let ret = this.add_1values(self.env, arg0, arg1);
+        println!("add_1values_1native: got result from java: {ret}");
+        ret
+    }
 }

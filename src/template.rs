@@ -37,7 +37,7 @@ use jaffi_support::\{
     FromJavaToRust,
     jni::\{
         JNIEnv,
-        objects::\{JByteBuffer, JClass, JObject},
+        objects::\{JByteBuffer, JClass, JObject, JValue},
         self,
         sys::jlong,
     }
@@ -51,7 +51,7 @@ pub struct { obj.class_name -}(JClass<'j>);
 
 impl<'j> { obj.class_name -} \{
     fn java_class_desc() -> &'static str \{
-        "{- obj.name -}"
+        "{- obj.java_name -}"
     }
 }
 
@@ -80,9 +80,48 @@ impl<'j> FromJavaToRust for { obj.class_name } \{
 pub struct { obj.obj_name -}(JObject<'j>);
 
 impl<'j> { obj.obj_name -} \{
-    fn java_class_desc() -> &'static str \{
-        "{- obj.name -}"
+    /// Returns the type name in java, e.g. `Object` is `"java/lang/Object"`
+    pub fn java_class_desc() -> &'static str \{
+        "{- obj.java_name -}"
     }
+
+    {{ for function in obj.methods }}
+    {{ if not function.is_static }}
+    /// A wrapper for the java function { function.name }
+    /// 
+    /// # Arguments
+    /// 
+    /// * `env` - this should be the same JNIEnv "owning" this object
+    pub fn { function.fn_ffi_name }(
+        &self,
+        env: JNIEnv<'j>,
+        {{- for arg in function.arguments }}
+        { arg.name }: { arg.rs_ty },
+        {{- endfor }}  
+    ) -> { function.rs_result -} \{
+        let args: &[JValue<'j>] = &[
+            {{- for arg in function.arguments }}
+            JValue::from({ arg.name }),
+            {{- endfor }} 
+        ];
+
+        let jvalue = match env.call_method(
+            self.0,
+            "{ function.name }",
+            "{ function.signature }",
+            args
+        ) \{
+            Ok(jvalue) => jvalue,
+            Err(e) => panic!("error calling java, \{e}"),
+        };
+
+        match jvalue.try_into() \{
+            Ok(ret) => ret,
+            Err(e) => panic!("could not convert to rust from jvalue, \{e}"),
+        }
+    }
+    {{ endif }}
+    {{ endfor}}
 }
 
 impl<'j> std::ops::Deref for { obj.obj_name -} \{
@@ -90,6 +129,12 @@ impl<'j> std::ops::Deref for { obj.obj_name -} \{
 
     fn deref(&self) -> &Self::Target \{
         &self.0
+    }
+}
+
+impl<'j> From<{ obj.obj_name -}> for JObject<'j> \{
+    fn from(obj: { obj.obj_name -}) -> Self \{
+        obj.0
     }
 }
 
@@ -120,7 +165,7 @@ pub trait { class.trait_name }<'j> \{
 {{ for function in class.functions }}
     fn { function.fn_ffi_name }(
         &self,
-        this: { function.class_or_this -},
+        this: {{ if function.is_static }}{ function.class_ffi_name -}{{ else }}{ function.object_ffi_name -}{{ endif }},
         {{- for arg in function.arguments }}
         { arg.name }: { arg.rs_ty },
         {{- endfor }}    
@@ -133,7 +178,7 @@ pub trait { class.trait_name }<'j> \{
 #[no_mangle]
 pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     env: JNIEnv<'j>,
-    this: { function.class_or_this -},
+    this: {{ if function.is_static }}{ function.class_ffi_name -}{{ else }}{ function.object_ffi_name -}{{ endif }},
     {{- for arg in function.arguments }}
     { arg.name }: { arg.ty },
     {{- endfor }}
@@ -190,10 +235,11 @@ pub(crate) struct ClassFfi {
 pub(crate) struct Function {
     pub(crate) name: String,
     pub(crate) fn_export_ffi_name: String,
-    pub(crate) fn_class_ffi_name: String,
+    pub(crate) class_ffi_name: String,
+    pub(crate) object_ffi_name: String,
     pub(crate) fn_ffi_name: String,
     pub(crate) signature: String,
-    pub(crate) class_or_this: String,
+    pub(crate) is_static: bool,
     pub(crate) arguments: Vec<Arg>,
     pub(crate) result: String,
     pub(crate) rs_result: String,
@@ -208,21 +254,23 @@ pub(crate) struct Arg {
 
 #[derive(Serialize)]
 pub(crate) struct Object {
-    pub(crate) name: String,
+    pub(crate) java_name: String,
     pub(crate) class_name: String,
     pub(crate) obj_name: String,
+    pub(crate) methods: Vec<Function>,
 }
 
 impl From<ObjectType> for Object {
     fn from(ty: ObjectType) -> Self {
-        let name = ty.as_descriptor().to_string();
+        let java_name = ty.as_descriptor().to_string();
         let class_name = ty.to_jni_class_name();
-        let obj_name = ty.to_jni_type_name().to_string();
+        let obj_name = ty.to_jni_type_name();
 
         Object {
-            name,
+            java_name,
             class_name,
             obj_name,
+            methods: Vec::new(),
         }
     }
 }
@@ -381,17 +429,20 @@ impl ObjectType {
         }
     }
 
+    /// Returns the typename with a lifetime
     pub(crate) fn to_jni_type_name(&self) -> String {
         // add the lifetime
         self.to_type_name_base() + "<'j>"
     }
 
+    /// Returns the typename plus "Class" with a lifetime
     pub(crate) fn to_jni_class_name(&self) -> String {
         // add the lifetime
         self.to_type_name_base() + "Class<'j>"
     }
 
-    fn to_rs_type_name(&self) -> String {
+    /// Returns the typename without a lifetime
+    pub(crate) fn to_rs_type_name(&self) -> String {
         self.to_type_name_base()
     }
 }

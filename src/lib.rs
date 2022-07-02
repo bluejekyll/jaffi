@@ -35,7 +35,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cafebabe::{MethodAccessFlags, ParseOptions};
+use cafebabe::{ClassFile, MethodAccessFlags, MethodInfo, ParseOptions};
 use typed_builder::TypedBuilder;
 
 use crate::template::BaseJniTy;
@@ -60,44 +60,18 @@ impl<'a> Jaffi<'a> {
     pub fn generate(&self) -> Result<(), Error> {
         let template = template::new_engine()?;
 
-        let default_classpath = &[Cow::Borrowed(Path::new("."))] as &[_];
-        let classpaths = if self.classpath.is_empty() {
-            default_classpath
-        } else {
-            self.classpath.as_slice()
-        };
-
         // shared buffer for classes that are read into memory
-        let mut class_buf = Vec::<u8>::new();
         let mut class_ffis = Vec::<ClassFfi>::new();
         let mut argument_types = HashSet::<ObjectType>::new();
 
         // create all the classes
-        for class in &self.classes {
-            class_buf.clear();
-            let class = class_to_path(class);
+        let classes = self.search_classpath(&self.classes)?;
 
-            let mut found_class = false;
-            'search: for classpath in classpaths {
-                if classpath.is_dir() && lookup_from_path(&*classpath, &class, &mut class_buf)? {
-                    found_class = true;
-                    break 'search;
-                } else if classpath.is_file() && classpath.extension().unwrap_or_default() == "jar"
-                {
-                    unimplemented!("jar files for classpath not yet supported")
-                } else {
-                    continue 'search;
-                };
-            }
+        let mut class_buf = Vec::<u8>::new();
+        for class in classes {
+            let class_file = self.read_class(&class, &mut class_buf)?;
 
-            // couldn't find the class
-            if !found_class {
-                return Err(
-                    format!("could not find class in classpath: {}", class.display()).into(),
-                );
-            }
-
-            let (class_ffi, objects) = self.generate_native_impls(&class_buf)?;
+            let (class_ffi, objects) = self.generate_native_impls(class_file)?;
             class_ffis.extend(class_ffi);
             argument_types.extend(objects);
         }
@@ -131,16 +105,68 @@ impl<'a> Jaffi<'a> {
         Ok(())
     }
 
+    fn search_classpath<S: AsRef<str>>(&self, classes: &[S]) -> Result<Vec<PathBuf>, Error> {
+        let default_classpath = &[Cow::Borrowed(Path::new("."))] as &[_];
+        let classpath = if self.classpath.is_empty() {
+            default_classpath
+        } else {
+            self.classpath.as_slice()
+        };
+
+        // create all the classes
+        let mut found_classes = Vec::new();
+        for class in classes {
+            let class = class.as_ref();
+            let class = class_to_path(class);
+
+            let mut found_class = false;
+            'search: for classpath in classpath {
+                if classpath.is_dir() && lookup_from_path(&*classpath, &class) {
+                    found_class = true;
+                    found_classes.push(dbg!(classpath.join(&class)));
+                    break 'search;
+                } else if classpath.is_file() && classpath.extension().unwrap_or_default() == "jar"
+                {
+                    unimplemented!("jar files for classpath not yet supported")
+                } else {
+                    continue 'search;
+                };
+            }
+
+            // couldn't find the class
+            if !found_class {
+                return Err(
+                    format!("could not find class in classpath: {}", class.display()).into(),
+                );
+            }
+        }
+
+        Ok(found_classes)
+    }
+
+    /// # Arguments
+    /// * `path` - path to the classfile
+    /// * `class_buf` - temporary buffer to use for the parsing, this will be cleared before use
+    fn read_class(&self, path: &Path, class_buf: &'a mut Vec<u8>) -> Result<ClassFile<'a>, Error> {
+        class_buf.clear();
+
+        if !path.exists() {
+            return Err(Error::from(format!("file not found: {}", path.display())));
+        }
+
+        let mut file = File::open(path)?;
+        file.read_to_end(class_buf)?;
+
+        let mut opts = ParseOptions::default();
+        opts.parse_bytecode(false);
+        cafebabe::parse_class_with_options(class_buf, &opts).map_err(Into::into)
+    }
+
     /// Returns list of Support types needed as interfaces in the ABI interfaces
     fn generate_native_impls(
         &self,
-        class_bytes: &[u8],
+        class_file: ClassFile<'_>,
     ) -> Result<(Option<ClassFfi>, HashSet<ObjectType>), Error> {
-        let mut opts = ParseOptions::default();
-        opts.parse_bytecode(false);
-        let class_file =
-            cafebabe::parse_class_with_options(class_bytes, &opts).map_err(|e| e.to_string())?;
-
         let native_methods = class_file
             .methods
             .iter()
@@ -152,12 +178,89 @@ impl<'a> Jaffi<'a> {
             return Ok((None, HashSet::new()));
         }
 
-        let method_names = native_methods
-            .iter()
-            .fold(HashMap::new(), |mut map, method| {
-                *map.entry(&method.name).or_insert(0) += 1;
-                map
-            });
+        // get all the function information
+        let (functions, argument_objects) =
+            self.extract_function_info(&class_file, native_methods)?;
+
+        let trait_name = Path::new(&*class_file.this_class)
+            .file_name()
+            .expect("no file component")
+            .to_string_lossy()
+            .to_string()
+            + "Rs";
+        let trait_impl = format!("{trait_name}Impl");
+
+        // build up the rendering information.
+        let class_ffi = template::ClassFfi {
+            class_name: class_file.this_class.to_string(),
+            type_name: escape_for_abi(&class_file.this_class),
+            trait_name,
+            trait_impl,
+            functions,
+        };
+
+        Ok((Some(class_ffi), argument_objects))
+    }
+
+    fn generate_support_types(&self, mut types: HashSet<ObjectType>) -> Result<Vec<Object>, Error> {
+        let mut search_object_types = types.iter().cloned().collect::<Vec<_>>();
+        let mut objects = Vec::<Object>::with_capacity(search_object_types.len());
+
+        let mut class_buf = Vec::<u8>::new();
+        while let Some(object) = search_object_types.pop() {
+            let mut object = if let ObjectType::Object(_) = object {
+                Object::from(object)
+            } else {
+                // we only want to generate data for local types
+                continue;
+            };
+
+            let class = self.search_classpath(&[&object.java_name])?;
+
+            for obj_path in class {
+                let class_file = self.read_class(&obj_path, &mut class_buf)?;
+
+                // collect public and non-native methods
+                let public_methods = class_file
+                    .methods
+                    .iter()
+                    .filter(|method_info| {
+                        method_info.name != "<init>"
+                            && !method_info.access_flags.contains(MethodAccessFlags::NATIVE)
+                            && method_info.access_flags.contains(MethodAccessFlags::PUBLIC)
+                    })
+                    .collect::<Vec<_>>();
+
+                let (functions, new_types) =
+                    self.extract_function_info(&class_file, public_methods)?;
+
+                // add any types to generate that we haven't seen before
+                for ty in new_types {
+                    if !types.contains(&ty) {
+                        types.insert(ty.clone());
+                        search_object_types.push(ty);
+                    }
+                }
+
+                // add the function to the methods in the object
+                object.methods.extend(functions.into_iter());
+            }
+
+            objects.push(object);
+        }
+
+        Ok(objects)
+    }
+
+    fn extract_function_info(
+        &self,
+        class_file: &ClassFile<'_>,
+        methods: Vec<&MethodInfo<'_>>,
+    ) -> Result<(Vec<Function>, HashSet<ObjectType>), Error> {
+        let method_names = methods.iter().fold(HashMap::new(), |mut map, method| {
+            *map.entry(&method.name).or_insert(0) += 1;
+            map
+        });
 
         // All objects needed to support calls into JNI from Java
         let mut argument_objects = HashSet::<ObjectType>::new();
@@ -168,18 +271,15 @@ impl<'a> Jaffi<'a> {
 
         // build up the function definitions
         let mut functions = Vec::new();
-        for method in native_methods {
+        for method in methods {
             println!("{method:#?}");
 
             let descriptor = method.descriptor.to_string();
 
-            let class_or_this = if method.access_flags.contains(MethodAccessFlags::STATIC) {
-                this_class.to_jni_class_name()
-            } else {
-                this_class.to_jni_type_name().to_string()
-            };
+            let is_static = method.access_flags.contains(MethodAccessFlags::STATIC);
 
-            let fn_class_ffi_name = escape_for_abi(&class_file.this_class);
+            let class_ffi_name = this_class.to_jni_class_name();
+            let object_ffi_name = this_class.to_jni_type_name();
             let fn_ffi_name = if *method_names
                 .get(&method.name)
                 .expect("should have been added above")
@@ -191,7 +291,8 @@ impl<'a> Jaffi<'a> {
                 // short is ok (faster lookup in dynamic linking)
                 method_to_abi_name(&method.name)
             };
-            let fn_export_ffi_name = method_to_export_abi_name(&fn_class_ffi_name, &fn_ffi_name);
+            let fn_export_ffi_name =
+                method_to_export_abi_name(&this_class.to_rs_type_name(), &fn_ffi_name);
 
             let arg_types = method
                 .descriptor
@@ -221,10 +322,11 @@ impl<'a> Jaffi<'a> {
             let function = Function {
                 name: method.name.to_string(),
                 fn_export_ffi_name,
-                fn_class_ffi_name,
+                class_ffi_name,
+                object_ffi_name,
                 fn_ffi_name,
                 signature: descriptor,
-                class_or_this,
+                is_static,
                 arguments,
                 result: result.to_jni_type_name(),
                 rs_result: result.to_rs_type_name(),
@@ -233,39 +335,7 @@ impl<'a> Jaffi<'a> {
             functions.push(function);
         }
 
-        let trait_name = Path::new(&*class_file.this_class)
-            .file_name()
-            .expect("no file component")
-            .to_string_lossy()
-            .to_string()
-            + "Rs";
-        let trait_impl = format!("{trait_name}Impl");
-
-        // build up the rendering information.
-        let class_ffi = template::ClassFfi {
-            class_name: class_file.this_class.to_string(),
-            type_name: escape_for_abi(&class_file.this_class),
-            trait_name,
-            trait_impl,
-            functions,
-        };
-
-        Ok((Some(class_ffi), argument_objects))
-    }
-
-    fn generate_support_types(&self, mut types: HashSet<ObjectType>) -> Result<Vec<Object>, Error> {
-        let objects = types
-            .drain()
-            .filter_map(|obj| {
-                if let ObjectType::Object(_) = obj {
-                    Some(Object::from(obj))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        Ok(objects)
+        Ok((functions, argument_objects))
     }
 }
 
@@ -274,17 +344,10 @@ fn class_to_path(name: &str) -> PathBuf {
     PathBuf::from(name).with_extension("class")
 }
 
-fn lookup_from_path(classpath: &Path, class: &Path, bytes: &mut Vec<u8>) -> Result<bool, Error> {
+fn lookup_from_path(classpath: &Path, class: &Path) -> bool {
     let path = classpath.join(class);
 
-    if !path.is_file() {
-        return Ok(false);
-    }
-
-    let mut file = File::open(path)?;
-    file.read_to_end(bytes)?;
-
-    Ok(true)
+    path.is_file()
 }
 
 /// Converts the method info into the native ABI name, see [resolving native method names](https://docs.oracle.com/en/java/javase/18/docs/specs/jni/design.html#resolving-native-method-names)
