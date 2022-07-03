@@ -27,4 +27,6 @@ public class NativeClass extends ParentClass {
     public static void print_hello() {
         System.out.println("hello!");
     }
+
+    public native int call_dad_native(int arg1);
 }

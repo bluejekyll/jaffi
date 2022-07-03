@@ -224,9 +224,16 @@ impl<'a> Jaffi<'a> {
     fn generate_support_types(&self, mut types: HashSet<JavaDesc>) -> Result<Vec<Object>, Error> {
         let mut search_object_types = types.iter().cloned().collect::<Vec<_>>();
         let mut objects = Vec::<Object>::with_capacity(search_object_types.len());
+        let mut already_generated = HashSet::<JavaDesc>::new();
 
         let mut class_buf = Vec::<u8>::new();
         while let Some(object) = search_object_types.pop() {
+            if already_generated.contains(&object) {
+                continue;
+            } else {
+                already_generated.insert(object.clone());
+            }
+
             let class = self.search_classpath(&[object.clone()])?;
             let mut object = Object::from(ObjectType::from(object));
 
@@ -252,6 +259,22 @@ impl<'a> Jaffi<'a> {
                     if !types.contains(&ty) {
                         types.insert(ty.clone());
                         search_object_types.push(ty);
+                    }
+                }
+
+                // find all interfaces this type supports
+                for interface in class_file
+                    .super_class
+                    .iter()
+                    .chain(class_file.interfaces.iter())
+                {
+                    // we're only going to generate types that have been explicitly been asked for,
+                    //   or those that appear in args, that's what's in the hash_map. So unlike above
+                    //   we won't add to the types hashmap
+                    let interface = JavaDesc::from(interface as &str);
+                    if types.contains(&interface) {
+                        search_object_types.push(interface.clone());
+                        object.interfaces.push(RustTypeName::from(interface));
                     }
                 }
 

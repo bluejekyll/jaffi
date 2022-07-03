@@ -1,6 +1,11 @@
 
 package net.bluejekyll;
 
+/**
+ * Simple test classes. This wires up the dylib, then checks all the inerfaces
+ * ensuring that data is
+ * being passed from Java to Rust and vice versa correctly.
+ */
 public class TestCases {
     public static void main(String[] args) {
         System.out.println("Running tests");
@@ -16,6 +21,7 @@ public class TestCases {
         test_long_int_int();
         test_add_values_native();
         test_print_hello();
+        test_call_dad();
     }
 
     static void test_void_void() {
@@ -65,5 +71,15 @@ public class TestCases {
 
         NativeClass obj = new NativeClass();
         obj.print_hello_native();
+    }
+
+    static void test_call_dad() {
+        NativeClass obj = new NativeClass();
+        int expected = 732;
+        int got = obj.call_dad_native(expected);
+
+        if (expected != got) {
+            throw new RuntimeException("Expected " + expected + " got " + got);
+        }
     }
 }

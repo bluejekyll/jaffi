@@ -90,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let class_path = class_path();
     let classes = vec![Cow::from("net.bluejekyll.NativeClass")];
-    let classes_to_wrap = vec![Cow::from("net.bluejekyll.NativeClass")];
+    let classes_to_wrap = vec![Cow::from("net.bluejekyll.ParentClass")];
     let output_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     let jaffi = Jaffi::builder()

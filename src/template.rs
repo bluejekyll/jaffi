@@ -89,11 +89,17 @@ impl<'j> { obj.obj_name -} \{
         "{- obj.java_name -}"
     }
 
-    {{ for function in obj.methods }}
-    {{ if not function.is_static }}
+    {{ for interface in obj.interfaces -}}
+    pub fn as_{- interface }(&self) -> { interface -}<'j> \{
+        { interface }(self.0)
+    }
+    {{ endfor }}
+
+    {{ for function in obj.methods -}}
+    {{ if not function.is_static -}}
     {{ call JAVA_FUNCTION_CALL with function }}
-    {{ endif }}
-    {{ endfor}}
+    {{- endif }}
+    {{- endfor }}
 }
 
 pub trait { obj.static_trait_name } \{
@@ -283,6 +289,7 @@ pub(crate) struct Object {
     pub(crate) obj_name: RustTypeName,
     pub(crate) static_trait_name: RustTypeName,
     pub(crate) methods: Vec<Function>,
+    pub(crate) interfaces: Vec<RustTypeName>,
 }
 
 impl From<ObjectType> for Object {
@@ -298,6 +305,7 @@ impl From<ObjectType> for Object {
             obj_name,
             static_trait_name,
             methods: Vec::new(),
+            interfaces: Vec::new(),
         }
     }
 }
@@ -688,6 +696,13 @@ impl RustTypeName {
 
     pub(crate) fn prepend(&self, s: &str) -> Self {
         RustTypeName(Cow::Owned(s.to_string() + &self.0))
+    }
+}
+
+impl From<JavaDesc> for RustTypeName {
+    fn from(d: JavaDesc) -> Self {
+        let abi_name = JniAbi::from(d.0);
+        Self(abi_name.to_string().into())
     }
 }
 

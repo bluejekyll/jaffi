@@ -53,10 +53,23 @@ impl<'j> net_bluejekyll::NativeClassRs<'j> for NativeClassRsImpl<'j> {
     }
 
     fn print_1hello_1native(&self, this: net_bluejekyll_NativeClass<'j>) -> () {
+        println!("print_1hello_1native: calling print_hello");
         this.print_1hello(self.env)
     }
 
     fn print_1hello_1native_1static(&self, this: net_bluejekyll_NativeClassClass<'j>) -> () {
+        println!("print_1hello_1native_1static: calling print_hello, statically");
         this.print_1hello(self.env)
+    }
+
+    fn call_1dad_1native(
+        &self,
+        this: net_bluejekyll::net_bluejekyll_NativeClass<'j>,
+        arg0: i32,
+    ) -> i32 {
+        println!("call_1dad_1native with {arg0}");
+
+        let parent = this.as_net_bluejekyll_ParentClass();
+        parent.call_1dad(self.env, arg0)
     }
 }
