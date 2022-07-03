@@ -248,7 +248,7 @@ pub(crate) struct RustFfi {
 #[derive(Serialize)]
 pub(crate) struct ClassFfi {
     pub(crate) class_name: String,
-    pub(crate) type_name: String,
+    pub(crate) type_name: RustTypeName,
     pub(crate) trait_name: String,
     pub(crate) trait_impl: String,
     pub(crate) functions: Vec<Function>,
@@ -257,40 +257,40 @@ pub(crate) struct ClassFfi {
 #[derive(Serialize)]
 pub(crate) struct Function {
     pub(crate) name: String,
-    pub(crate) object_java_desc: String,
-    pub(crate) fn_export_ffi_name: String,
-    pub(crate) class_ffi_name: String,
-    pub(crate) object_ffi_name: String,
-    pub(crate) fn_ffi_name: String,
-    pub(crate) signature: String,
+    pub(crate) object_java_desc: JavaDesc,
+    pub(crate) fn_export_ffi_name: ClassAndFuncAbi,
+    pub(crate) class_ffi_name: RustTypeName,
+    pub(crate) object_ffi_name: RustTypeName,
+    pub(crate) fn_ffi_name: FuncAbi,
+    pub(crate) signature: JavaDesc,
     pub(crate) is_static: bool,
     pub(crate) arguments: Vec<Arg>,
-    pub(crate) result: String,
-    pub(crate) rs_result: String,
+    pub(crate) result: RustTypeName,
+    pub(crate) rs_result: RustTypeName,
 }
 
 #[derive(Serialize)]
 pub(crate) struct Arg {
     pub(crate) name: String,
-    pub(crate) ty: String,
-    pub(crate) rs_ty: String,
+    pub(crate) ty: RustTypeName,
+    pub(crate) rs_ty: RustTypeName,
 }
 
 #[derive(Serialize)]
 pub(crate) struct Object {
-    pub(crate) java_name: String,
-    pub(crate) class_name: String,
-    pub(crate) obj_name: String,
-    pub(crate) static_trait_name: String,
+    pub(crate) java_name: JavaDesc,
+    pub(crate) class_name: RustTypeName,
+    pub(crate) obj_name: RustTypeName,
+    pub(crate) static_trait_name: RustTypeName,
     pub(crate) methods: Vec<Function>,
 }
 
 impl From<ObjectType> for Object {
     fn from(ty: ObjectType) -> Self {
-        let java_name = ty.as_descriptor().to_string();
+        let java_name = ty.as_descriptor();
         let class_name = ty.to_jni_class_name();
         let obj_name = ty.to_jni_type_name();
-        let static_trait_name = format!("Static_{}", ty.to_rs_type_name());
+        let static_trait_name = ty.to_rs_type_name().prepend("Static_");
 
         Object {
             java_name,
@@ -316,16 +316,16 @@ impl Return {
         }
     }
 
-    pub(crate) fn to_jni_type_name(&self) -> String {
+    pub(crate) fn to_jni_type_name(&self) -> RustTypeName {
         match self {
-            Self::Void => std::any::type_name::<JavaVoid>().to_string(),
+            Self::Void => std::any::type_name::<JavaVoid>().into(),
             Self::Val(ty) => ty.to_jni_type_name(),
         }
     }
 
-    pub(crate) fn to_rs_type_name(&self) -> String {
+    pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
         match self {
-            Self::Void => std::any::type_name::<()>().to_string(),
+            Self::Void => std::any::type_name::<()>().into(),
             Self::Val(ty) => ty.to_rs_type_name(),
         }
     }
@@ -365,7 +365,7 @@ impl JniType {
     /// Outputs the form needed in jni function interfaces
     ///
     /// These must all be marked `#[repr(transparent)]` in order to be used at the FFI boundary
-    pub(crate) fn to_jni_type_name(&self) -> String {
+    pub(crate) fn to_jni_type_name(&self) -> RustTypeName {
         match self {
             Self::Ty(BaseJniTy::Jbyte) => std::any::type_name::<JavaByte>().into(),
             Self::Ty(BaseJniTy::Jchar) => std::any::type_name::<JavaChar>().into(),
@@ -375,13 +375,13 @@ impl JniType {
             Self::Ty(BaseJniTy::Jlong) => std::any::type_name::<JavaLong>().into(),
             Self::Ty(BaseJniTy::Jshort) => std::any::type_name::<JavaShort>().into(),
             Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<JavaBoolean>().into(),
-            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_jni_type_name(),
+            Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_type_name_base(),
             // in JNI the array is always jarray
             Self::Jarray { .. } => std::any::type_name::<sys::jarray>().into(),
         }
     }
 
-    pub(crate) fn to_rs_type_name(&self) -> String {
+    pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
         match self {
             Self::Ty(BaseJniTy::Jbyte) => std::any::type_name::<i8>().into(),
             Self::Ty(BaseJniTy::Jchar) => std::any::type_name::<char>().into(),
@@ -409,7 +409,9 @@ impl JniType {
                 Ty::Base(BaseType::Long) => BaseJniTy::Jlong,
                 Ty::Base(BaseType::Short) => BaseJniTy::Jshort,
                 Ty::Base(BaseType::Boolean) => BaseJniTy::Jboolean,
-                Ty::Object(obj) => BaseJniTy::Jobject(ObjectType::from(obj)),
+                Ty::Object(obj) => {
+                    BaseJniTy::Jobject(ObjectType::from(JavaDesc::from(obj.to_string())))
+                }
             }
         }
 
@@ -430,59 +432,279 @@ pub(crate) enum ObjectType {
     JObject,
     JString,
     JThrowable,
-    Object(String),
+    Object(JavaDesc),
 }
 
 impl ObjectType {
-    pub(crate) fn as_descriptor(&self) -> &str {
+    pub(crate) fn as_descriptor(&self) -> JavaDesc {
         match self {
-            Self::JClass => "java/lang/Class",
-            Self::JByteBuffer => "java/nio/ByteBuffer",
-            Self::JObject => "java/lang/Object",
-            Self::JString => "java/lang/String",
-            Self::JThrowable => "java/lang/Throwable",
-            Self::Object(desc) => desc,
+            Self::JClass => "java/lang/Class".into(),
+            Self::JByteBuffer => "java/nio/ByteBuffer".into(),
+            Self::JObject => "java/lang/Object".into(),
+            Self::JString => "java/lang/String".into(),
+            Self::JThrowable => "java/lang/Throwable".into(),
+            Self::Object(desc) => desc.clone(),
         }
     }
 
-    fn to_type_name_base(&self) -> String {
+    fn to_type_name_base(&self) -> RustTypeName {
         match *self {
             Self::JClass => std::any::type_name::<JClass<'_>>().into(),
             Self::JByteBuffer => std::any::type_name::<JByteBuffer<'_>>().into(),
             Self::JObject => std::any::type_name::<JObject<'_>>().into(),
             Self::JString => std::any::type_name::<JString<'_>>().into(),
             Self::JThrowable => std::any::type_name::<JThrowable<'_>>().into(),
-            Self::Object(ref obj) => obj.replace('/', "_"),
+            Self::Object(ref obj) => obj.0.replace('/', "_").into(),
         }
     }
 
     /// Returns the typename with a lifetime
-    pub(crate) fn to_jni_type_name(&self) -> String {
+    pub(crate) fn to_jni_type_name(&self) -> RustTypeName {
         // add the lifetime
-        self.to_type_name_base() + "<'j>"
+        self.to_type_name_base().append("<'j>")
     }
 
     /// Returns the typename plus "Class" with a lifetime
-    pub(crate) fn to_jni_class_name(&self) -> String {
+    pub(crate) fn to_jni_class_name(&self) -> RustTypeName {
         // add the lifetime
-        self.to_type_name_base() + "Class<'j>"
+        self.to_type_name_base().append("Class<'j>")
     }
 
     /// Returns the typename without a lifetime
-    pub(crate) fn to_rs_type_name(&self) -> String {
+    pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
         self.to_type_name_base()
     }
 }
 
-impl<'a> From<&Cow<'a, str>> for ObjectType {
-    fn from(path_name: &Cow<'a, str>) -> Self {
-        match path_name {
+// impl<'a, S: AsRef<str> + 'a> From<S> for ObjectType {
+//     fn from(path_name: S) -> Self {
+//         let path_name = path_name.as_ref();
+//         match dbg!(path_name) {
+//             _ if &*path_name == "java/lang/Class" => Self::JClass,
+//             _ if &*path_name == "java/nio/ByteBuffer" => Self::JByteBuffer,
+//             _ if &*path_name == "java/lang/Object" => Self::JObject,
+//             _ if &*path_name == "java/lang/String" => Self::JString,
+//             _ if &*path_name == "java/lang/Throwable" => Self::JThrowable,
+//             path_name => Self::Object(path_name.to_string().into()),
+//         }
+//     }
+// }
+
+impl From<JavaDesc> for ObjectType {
+    fn from(java_desc: JavaDesc) -> Self {
+        let path_name = java_desc.as_str();
+        match dbg!(path_name) {
             _ if &*path_name == "java/lang/Class" => Self::JClass,
             _ if &*path_name == "java/nio/ByteBuffer" => Self::JByteBuffer,
             _ if &*path_name == "java/lang/Object" => Self::JObject,
             _ if &*path_name == "java/lang/String" => Self::JString,
             _ if &*path_name == "java/lang/Throwable" => Self::JThrowable,
-            path_name => Self::Object(path_name.to_string()),
+            path_name => Self::Object(path_name.to_string().into()),
         }
+    }
+}
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct FuncAbi(JniAbi);
+
+impl From<JniAbi> for FuncAbi {
+    fn from(abi: JniAbi) -> Self {
+        FuncAbi(abi)
+    }
+}
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct ClassAndFuncAbi(JniAbi);
+
+/// An escaped String for the Java JNI ABI
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct JniAbi(String);
+
+impl FuncAbi {
+    pub(crate) fn with_class(&self, class: &RustTypeName) -> ClassAndFuncAbi {
+        let ffi_name = class
+            .clone()
+            .prepend("Java_")
+            .append("_")
+            .append(&self.0 .0)
+            .to_string();
+        ClassAndFuncAbi(JniAbi(ffi_name))
+    }
+
+    pub(crate) fn with_descriptor(self, descriptor: &JavaDesc) -> Self {
+        // strip the '(', ')', and return from the descriptor
+        let descriptor = descriptor.0.strip_prefix('(').unwrap_or(&descriptor.0);
+        let descriptor = if let Some(pos) = descriptor.find(')') {
+            &descriptor[..pos]
+        } else {
+            descriptor
+        };
+
+        let abi_descriptor = JniAbi::from(descriptor);
+
+        Self(JniAbi(format!("{self}__{abi_descriptor}")))
+    }
+}
+
+/// Converts the method info into the native ABI name, see [resolving native method names](https://docs.oracle.com/en/java/javase/18/docs/specs/jni/design.html#resolving-native-method-names)
+///
+/// ```text
+///
+/// The JNI defines a 1:1 mapping from the name of a native method declared in Java to the name of a native method residing in a native library. The VM uses this mapping to dynamically link a Java invocation of a native method to the corresponding implementation in the native library.
+///
+/// The mapping produces a native method name by concatenating the following components derived from a native method declaration:
+///
+///     the prefix Java_
+///     given the binary name, in internal form, of the class which declares the native method: the result of escaping the name.
+///     an underscore ("_")
+///     the escaped method name
+///     if the native method declaration is overloaded: two underscores ("__") followed by the escaped parameter descriptor (JVMS 4.3.3) of the method declaration.
+///
+/// Escaping leaves every alphanumeric ASCII character (A-Za-z0-9) unchanged, and replaces each UTF-16 code unit in the table below with the corresponding escape sequence. If the name to be escaped contains a surrogate pair, then the high-surrogate code unit and the low-surrogate code unit are escaped separately. The result of escaping is a string consisting only of the ASCII characters A-Za-z0-9 and underscore.
+/// | UTF-16 code unit                | Escape sequence |
+/// | Forward slash (/, U+002F)       | _               |
+/// | Underscore (_, U+005F)          | _1              |
+/// | Semicolon (;, U+003B)           | _2              |
+/// | Left square bracket ([, U+005B) | _3              |
+/// | Any UTF-16 code unit \uWXYZ that does not represent alphanumeric ASCII (A-Za-z0-9), forward slash, underscore, semicolon, or left square bracket | _0wxyz where w, x, y, and z are the lower-case forms of the hexadecimal digits W, X, Y, and Z. (For example, U+ABCD becomes _0abcd.)|
+///
+/// Escaping is necessary for two reasons. First, to ensure that class and method names in Java source code, which may include Unicode characters, translate into valid function names in C source code. Second, to ensure that the parameter descriptor of a native method, which uses ";" and "[" characters to encode parameter types, can be encoded in a C function name.
+///
+/// When a Java program invokes a native method, the VM searches the native library by looking first for the short version of the native method name, that is, the name without the escaped argument signature. If a native method with the short name is not found, then the VM looks for the long version of the native method name, that is, the name including the escaped argument signature.
+///
+/// Looking for the short name first makes it easier to declare implementations in the native library. For example, given this native method in Java:
+///
+/// package p.q.r;
+/// class A {
+///     native double f(int i, String s);
+/// }
+///
+/// The corresponding C function can be named Java_p_q_r_A_f, rather than Java_p_q_r_A_f__ILjava_lang_String_2.
+///
+/// Declaring implementations with long names in the native library is only necessary when two or more native methods in a class have the same name. For example, given these native methods in Java:
+///
+/// package p.q.r;
+/// class A {
+///     native double f(int i, String s);
+///     native double f(int i, Object s);
+/// }
+///
+/// The corresponding C functions must be named Java_p_q_r_A_f__ILjava_lang_String_2 and Java_p_q_r_A_f__ILjava_lang_Object_2, because the native methods are overloaded.
+///
+/// Long names in the native library are not necessary if a native method in Java is overloaded by non-native methods only. In the following example, the native method g does not have to be linked using the long name because the other method g is not native and thus does not reside in the native library.
+///
+/// package p.q.r;
+/// class B {
+///     int g(int i);
+///     native int g(double d);
+/// }
+///
+/// Note that escape sequences can safely begin _0, _1, etc, because class and method names in Java source code never begin with a number. However, that is not the case in class files that were not generated from Java source code. To preserve the 1:1 mapping to a native method name, the VM checks the resulting name as follows. If the process of escaping any precursor string from the native method declaration (class or method name, or argument type) causes a "0", "1", "2", or "3" character from the precursor string to appear unchanged in the result either immediately after an underscore or at the beginning of the escaped string (where it will follow an underscore in the fully assembled name), then the escaping process is said to have "failed". In such cases, no native library search is performed, and the attempt to link the native method invocation will throw UnsatisfiedLinkError. It would be possible to extend the present simple mapping scheme to cover such cases, but the complexity costs would outweigh any benefit.
+///
+/// Both the native methods and the interface APIs follow the standard library-calling convention on a given platform. For example, UNIX systems use the C calling convention, while Win32 systems use __stdcall.
+///
+/// Native methods can also be explicitly linked using the RegisterNatives function. Be aware that RegisterNatives can change the documented behavior of the JVM (including cryptographic algorithms, correctness, security, type safety), by changing the native code to be executed for a given native Java method. Therefore use applications that have native libraries utilizing the RegisterNatives function with caution.
+/// ```
+impl<S: AsRef<str>> From<S> for JniAbi {
+    fn from(name: S) -> Self {
+        let name = name.as_ref();
+        let mut abi_name = String::with_capacity(name.len());
+
+        for ch in name.chars() {
+            match ch {
+                '.' | '/' => abi_name.push('_'),
+                '_' => abi_name.push_str("_1"),
+                ';' => abi_name.push_str("_2"),
+                '[' => abi_name.push_str("_3"),
+                _ if ch.is_ascii_alphanumeric() => abi_name.push(ch),
+                _ => {
+                    abi_name.push_str("_0");
+
+                    for c in ch.escape_unicode().skip(3).filter(|c| *c != '}') {
+                        abi_name.push(c);
+                    }
+                }
+            }
+        }
+
+        JniAbi(abi_name)
+    }
+}
+
+impl fmt::Display for JniAbi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(&self.0)
+    }
+}
+
+impl fmt::Display for FuncAbi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(&self.0 .0)
+    }
+}
+
+impl fmt::Display for ClassAndFuncAbi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(&self.0 .0)
+    }
+}
+
+/// Descriptor in java, like `java.lang.String` or `(Ljava.lang.String;)J`
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct JavaDesc(String);
+
+impl JavaDesc {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for JavaDesc {
+    fn from(s: String) -> Self {
+        JavaDesc(s.replace('.', "/"))
+    }
+}
+
+impl From<&str> for JavaDesc {
+    fn from(s: &str) -> Self {
+        JavaDesc::from(s.to_string())
+    }
+}
+
+/// Descriptor in java, like `java.lang.String` or `(Ljava.lang.String;)J`
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct RustTypeName(Cow<'static, str>);
+
+impl RustTypeName {
+    pub(crate) fn append(&self, s: &str) -> Self {
+        let no_lifetime = self.0.trim_end_matches("<'j>").to_string();
+        RustTypeName(Cow::Owned(no_lifetime + s))
+    }
+
+    pub(crate) fn prepend(&self, s: &str) -> Self {
+        RustTypeName(Cow::Owned(s.to_string() + &self.0))
+    }
+}
+
+impl From<String> for RustTypeName {
+    fn from(s: String) -> Self {
+        RustTypeName(Cow::Owned(s))
+    }
+}
+
+impl From<&'static str> for RustTypeName {
+    fn from(s: &'static str) -> Self {
+        Self(Cow::Borrowed(s))
+    }
+}
+
+impl fmt::Display for RustTypeName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(&self.0)
     }
 }

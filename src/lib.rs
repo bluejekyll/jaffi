@@ -24,7 +24,9 @@ mod error;
 mod template;
 
 pub use error::{Error, ErrorKind};
-use template::{Arg, ClassFfi, Function, JniType, Object, ObjectType, Return, RustFfi};
+use template::{
+    Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustFfi, RustTypeName,
+};
 use tinytemplate::TinyTemplate;
 
 use std::{
@@ -38,7 +40,7 @@ use std::{
 use cafebabe::{ClassFile, MethodAccessFlags, MethodInfo, ParseOptions};
 use typed_builder::TypedBuilder;
 
-use crate::template::BaseJniTy;
+use crate::template::{BaseJniTy, FuncAbi, JavaDesc};
 
 pub use jaffi_support;
 
@@ -51,8 +53,11 @@ pub struct Jaffi<'a> {
     ///
     /// Implementation files will be the java class name converted to a rust module name with `_` replacing the `.`
     output_dir: Option<Cow<'a, Path>>,
-    /// List of classes (specified as java class names, i.e. `java.lang.Object`) to generate bindings for
-    classes: Vec<Cow<'a, str>>,
+    /// List of classes with native methods (specified as java class names, i.e. `java.lang.Object`) to generate bindings for
+    native_classes: Vec<Cow<'a, str>>,
+    /// List of classes that wrappers will be generated for
+    #[builder(default=Vec::new())]
+    classes_to_wrap: Vec<Cow<'a, str>>,
 }
 
 impl<'a> Jaffi<'a> {
@@ -62,10 +67,20 @@ impl<'a> Jaffi<'a> {
 
         // shared buffer for classes that are read into memory
         let mut class_ffis = Vec::<ClassFfi>::new();
-        let mut argument_types = HashSet::<ObjectType>::new();
+        let mut argument_types = HashSet::<JavaDesc>::new();
+        argument_types.extend(
+            self.classes_to_wrap
+                .iter()
+                .map(|s| JavaDesc::from(s as &str)),
+        );
 
         // create all the classes
-        let classes = self.search_classpath(&self.classes)?;
+        let native_classes = self
+            .native_classes
+            .iter()
+            .map(|s| JavaDesc::from(s as &str))
+            .collect::<Vec<_>>();
+        let classes = self.search_classpath(&native_classes)?;
 
         let mut class_buf = Vec::<u8>::new();
         for class in classes {
@@ -105,7 +120,7 @@ impl<'a> Jaffi<'a> {
         Ok(())
     }
 
-    fn search_classpath<S: AsRef<str>>(&self, classes: &[S]) -> Result<Vec<PathBuf>, Error> {
+    fn search_classpath(&self, classes: &[JavaDesc]) -> Result<Vec<PathBuf>, Error> {
         let default_classpath = &[Cow::Borrowed(Path::new("."))] as &[_];
         let classpath = if self.classpath.is_empty() {
             default_classpath
@@ -116,14 +131,13 @@ impl<'a> Jaffi<'a> {
         // create all the classes
         let mut found_classes = Vec::new();
         for class in classes {
-            let class = class.as_ref();
-            let class = class_to_path(class);
+            let class = class_to_path(class.as_str());
 
             let mut found_class = false;
             'search: for classpath in classpath {
                 if classpath.is_dir() && lookup_from_path(&*classpath, &class) {
                     found_class = true;
-                    found_classes.push(dbg!(classpath.join(&class)));
+                    found_classes.push(classpath.join(&class));
                     break 'search;
                 } else if classpath.is_file() && classpath.extension().unwrap_or_default() == "jar"
                 {
@@ -166,7 +180,12 @@ impl<'a> Jaffi<'a> {
     fn generate_native_impls(
         &self,
         class_file: ClassFile<'_>,
-    ) -> Result<(Option<ClassFfi>, HashSet<ObjectType>), Error> {
+    ) -> Result<(Option<ClassFfi>, HashSet<JavaDesc>), Error> {
+        eprintln!(
+            "Generating native implementations for: {}, version: {}.{}",
+            class_file.this_class, class_file.major_version, class_file.minor_version
+        );
+
         let native_methods = class_file
             .methods
             .iter()
@@ -193,7 +212,7 @@ impl<'a> Jaffi<'a> {
         // build up the rendering information.
         let class_ffi = template::ClassFfi {
             class_name: class_file.this_class.to_string(),
-            type_name: escape_for_abi(&class_file.this_class),
+            type_name: RustTypeName::from(class_file.this_class.to_string()),
             trait_name,
             trait_impl,
             functions,
@@ -202,20 +221,14 @@ impl<'a> Jaffi<'a> {
         Ok((Some(class_ffi), argument_objects))
     }
 
-    fn generate_support_types(&self, mut types: HashSet<ObjectType>) -> Result<Vec<Object>, Error> {
+    fn generate_support_types(&self, mut types: HashSet<JavaDesc>) -> Result<Vec<Object>, Error> {
         let mut search_object_types = types.iter().cloned().collect::<Vec<_>>();
         let mut objects = Vec::<Object>::with_capacity(search_object_types.len());
 
         let mut class_buf = Vec::<u8>::new();
         while let Some(object) = search_object_types.pop() {
-            let mut object = if let ObjectType::Object(_) = object {
-                Object::from(object)
-            } else {
-                // we only want to generate data for local types
-                continue;
-            };
-
-            let class = self.search_classpath(&[&object.java_name])?;
+            let class = self.search_classpath(&[object.clone()])?;
+            let mut object = Object::from(ObjectType::from(object));
 
             for obj_path in class {
                 let class_file = self.read_class(&obj_path, &mut class_buf)?;
@@ -252,33 +265,40 @@ impl<'a> Jaffi<'a> {
         Ok(objects)
     }
 
+    /// # Return
+    ///
+    /// On success, the discovered Functions are returned in a Vec, and a HashSet of additional types to support function calls
     fn extract_function_info(
         &self,
         class_file: &ClassFile<'_>,
         methods: Vec<&MethodInfo<'_>>,
-    ) -> Result<(Vec<Function>, HashSet<ObjectType>), Error> {
+    ) -> Result<(Vec<Function>, HashSet<JavaDesc>), Error> {
+        eprintln!(
+            "Extracting function information for: {}, version: {}.{}",
+            class_file.this_class, class_file.major_version, class_file.minor_version
+        );
+
         let method_names = methods.iter().fold(HashMap::new(), |mut map, method| {
             *map.entry(&method.name).or_insert(0) += 1;
             map
         });
 
         // All objects needed to support calls into JNI from Java
-        let mut argument_objects = HashSet::<ObjectType>::new();
+        let mut argument_objects = HashSet::<JavaDesc>::new();
 
         // This class will always be necessary
-        let this_class = ObjectType::Object(class_file.this_class.to_string());
-        argument_objects.insert(this_class.clone());
+        let this_class_desc = JavaDesc::from(&class_file.this_class as &str);
+        let this_class = ObjectType::Object(this_class_desc.clone());
+        argument_objects.insert(this_class_desc.clone());
 
         // build up the function definitions
         let mut functions = Vec::new();
         for method in methods {
-            println!("{method:#?}");
-
-            let descriptor = method.descriptor.to_string();
+            let descriptor = JavaDesc::from(method.descriptor.to_string());
 
             let is_static = method.access_flags.contains(MethodAccessFlags::STATIC);
 
-            let object_java_desc = class_file.this_class.to_string();
+            let object_java_desc = this_class_desc.clone();
             let class_ffi_name = this_class.to_jni_class_name();
             let object_ffi_name = this_class.to_jni_type_name();
             let fn_ffi_name = if *method_names
@@ -287,13 +307,12 @@ impl<'a> Jaffi<'a> {
                 > 1
             {
                 // need to long abi name
-                method_to_long_abi_name(&method.name, &descriptor)
+                FuncAbi::from(JniAbi::from(&method.name)).with_descriptor(&descriptor)
             } else {
                 // short is ok (faster lookup in dynamic linking)
-                method_to_abi_name(&method.name)
+                FuncAbi::from(JniAbi::from(&method.name))
             };
-            let fn_export_ffi_name =
-                method_to_export_abi_name(&this_class.to_rs_type_name(), &fn_ffi_name);
+            let fn_export_ffi_name = fn_ffi_name.with_class(&this_class.to_jni_type_name());
 
             let arg_types = method
                 .descriptor
@@ -304,7 +323,9 @@ impl<'a> Jaffi<'a> {
 
             for ty in &arg_types {
                 match ty {
-                    JniType::Ty(BaseJniTy::Jobject(obj)) => argument_objects.insert(obj.clone()),
+                    JniType::Ty(BaseJniTy::Jobject(ObjectType::Object(obj))) => {
+                        argument_objects.insert(obj.clone())
+                    }
                     _ => continue,
                 };
             }
@@ -352,128 +373,24 @@ fn lookup_from_path(classpath: &Path, class: &Path) -> bool {
     path.is_file()
 }
 
-/// Converts the method info into the native ABI name, see [resolving native method names](https://docs.oracle.com/en/java/javase/18/docs/specs/jni/design.html#resolving-native-method-names)
-///
-/// ```text
-///
-/// The JNI defines a 1:1 mapping from the name of a native method declared in Java to the name of a native method residing in a native library. The VM uses this mapping to dynamically link a Java invocation of a native method to the corresponding implementation in the native library.
-///
-/// The mapping produces a native method name by concatenating the following components derived from a native method declaration:
-///
-///     the prefix Java_
-///     given the binary name, in internal form, of the class which declares the native method: the result of escaping the name.
-///     an underscore ("_")
-///     the escaped method name
-///     if the native method declaration is overloaded: two underscores ("__") followed by the escaped parameter descriptor (JVMS 4.3.3) of the method declaration.
-///
-/// Escaping leaves every alphanumeric ASCII character (A-Za-z0-9) unchanged, and replaces each UTF-16 code unit in the table below with the corresponding escape sequence. If the name to be escaped contains a surrogate pair, then the high-surrogate code unit and the low-surrogate code unit are escaped separately. The result of escaping is a string consisting only of the ASCII characters A-Za-z0-9 and underscore.
-/// | UTF-16 code unit                | Escape sequence |
-/// | Forward slash (/, U+002F)       | _               |
-/// | Underscore (_, U+005F)          | _1              |
-/// | Semicolon (;, U+003B)           | _2              |
-/// | Left square bracket ([, U+005B) | _3              |
-/// | Any UTF-16 code unit \uWXYZ that does not represent alphanumeric ASCII (A-Za-z0-9), forward slash, underscore, semicolon, or left square bracket | _0wxyz where w, x, y, and z are the lower-case forms of the hexadecimal digits W, X, Y, and Z. (For example, U+ABCD becomes _0abcd.)|
-///
-/// Escaping is necessary for two reasons. First, to ensure that class and method names in Java source code, which may include Unicode characters, translate into valid function names in C source code. Second, to ensure that the parameter descriptor of a native method, which uses ";" and "[" characters to encode parameter types, can be encoded in a C function name.
-///
-/// When a Java program invokes a native method, the VM searches the native library by looking first for the short version of the native method name, that is, the name without the escaped argument signature. If a native method with the short name is not found, then the VM looks for the long version of the native method name, that is, the name including the escaped argument signature.
-///
-/// Looking for the short name first makes it easier to declare implementations in the native library. For example, given this native method in Java:
-///
-/// package p.q.r;
-/// class A {
-///     native double f(int i, String s);
-/// }
-///
-/// The corresponding C function can be named Java_p_q_r_A_f, rather than Java_p_q_r_A_f__ILjava_lang_String_2.
-///
-/// Declaring implementations with long names in the native library is only necessary when two or more native methods in a class have the same name. For example, given these native methods in Java:
-///
-/// package p.q.r;
-/// class A {
-///     native double f(int i, String s);
-///     native double f(int i, Object s);
-/// }
-///
-/// The corresponding C functions must be named Java_p_q_r_A_f__ILjava_lang_String_2 and Java_p_q_r_A_f__ILjava_lang_Object_2, because the native methods are overloaded.
-///
-/// Long names in the native library are not necessary if a native method in Java is overloaded by non-native methods only. In the following example, the native method g does not have to be linked using the long name because the other method g is not native and thus does not reside in the native library.
-///
-/// package p.q.r;
-/// class B {
-///     int g(int i);
-///     native int g(double d);
-/// }
-///
-/// Note that escape sequences can safely begin _0, _1, etc, because class and method names in Java source code never begin with a number. However, that is not the case in class files that were not generated from Java source code. To preserve the 1:1 mapping to a native method name, the VM checks the resulting name as follows. If the process of escaping any precursor string from the native method declaration (class or method name, or argument type) causes a "0", "1", "2", or "3" character from the precursor string to appear unchanged in the result either immediately after an underscore or at the beginning of the escaped string (where it will follow an underscore in the fully assembled name), then the escaping process is said to have "failed". In such cases, no native library search is performed, and the attempt to link the native method invocation will throw UnsatisfiedLinkError. It would be possible to extend the present simple mapping scheme to cover such cases, but the complexity costs would outweigh any benefit.
-///
-/// Both the native methods and the interface APIs follow the standard library-calling convention on a given platform. For example, UNIX systems use the C calling convention, while Win32 systems use __stdcall.
-///
-/// Native methods can also be explicitly linked using the RegisterNatives function. Be aware that RegisterNatives can change the documented behavior of the JVM (including cryptographic algorithms, correctness, security, type safety), by changing the native code to be executed for a given native Java method. Therefore use applications that have native libraries utilizing the RegisterNatives function with caution.
-/// ```
-fn method_to_abi_name(method_name: &str) -> String {
-    let abi_method_name = escape_for_abi(method_name);
-
-    format!("{abi_method_name}")
-}
-
-fn method_to_long_abi_name(method_name: &str, descriptor: &str) -> String {
-    // strip the '(', ')', and return from the descriptor
-    let descriptor = descriptor.strip_prefix('(').unwrap_or(descriptor);
-    let descriptor = if let Some(pos) = descriptor.find(")") {
-        &descriptor[..pos]
-    } else {
-        descriptor
-    };
-
-    let abi_method = method_to_abi_name(method_name);
-    let abi_descriptor = escape_for_abi(descriptor);
-
-    format!("{abi_method}__{abi_descriptor}")
-}
-
-fn method_to_export_abi_name(class_abi_name: &str, method_abi_name: &str) -> String {
-    format!("Java_{class_abi_name}_{method_abi_name}")
-}
-
-fn escape_for_abi(name: &str) -> String {
-    let mut abi_name = String::with_capacity(name.len());
-
-    for ch in name.chars() {
-        match ch {
-            '.' | '/' => abi_name.push('_'),
-            '_' => abi_name.push_str("_1"),
-            ';' => abi_name.push_str("_2"),
-            '[' => abi_name.push_str("_3"),
-            _ if ch.is_ascii_alphanumeric() => abi_name.push(ch),
-            _ => {
-                abi_name.push_str("_0");
-
-                for c in ch.escape_unicode().skip(3).filter(|c| *c != '}') {
-                    abi_name.push(c);
-                }
-            }
-        }
-    }
-
-    abi_name
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_escape_name() {
-        assert_eq!(escape_for_abi("p.q.r.A"), "p_q_r_A");
+        assert_eq!(JniAbi::from("p.q.r.A").to_string(), "p_q_r_A");
         assert_eq!(
-            method_to_long_abi_name("f", "(ILjava.lang.String;)D"),
-            "f__ILjava_lang_String_2"
+            FuncAbi::from(JniAbi::from("f"))
+                .with_descriptor(&JavaDesc::from("(ILjava.lang.String;)D"))
+                .with_class(&RustTypeName::from("p.q.r.A"))
+                .to_string(),
+            "Java_p_q_r_A_f__ILjava_lang_String_2"
         );
     }
 
     #[test]
     fn test_escape_name_unicode() {
-        assert_eq!(method_to_abi_name("i❤'🦀"), "i_02764_027_01f980");
+        assert_eq!(JniAbi::from("i❤'🦀").to_string(), "i_02764_027_01f980");
     }
 }

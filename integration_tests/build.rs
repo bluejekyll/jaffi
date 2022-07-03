@@ -89,11 +89,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     compile_java();
 
     let class_path = class_path();
-    let class = "net.bluejekyll.NativeClass";
+    let classes = vec![Cow::from("net.bluejekyll.NativeClass")];
+    let classes_to_wrap = vec![Cow::from("net.bluejekyll.NativeClass")];
     let output_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     let jaffi = Jaffi::builder()
-        .classes(vec![Cow::from(class)])
+        .native_classes(classes)
+        .classes_to_wrap(classes_to_wrap)
         .classpath(vec![Cow::from(class_path)])
         .output_dir(Some(Cow::from(output_dir)))
         .build();

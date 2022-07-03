@@ -1,6 +1,6 @@
 package net.bluejekyll;
 
-public class NativeClass {
+public class NativeClass extends ParentClass {
     // basic test
     public static native void void_void();
 
