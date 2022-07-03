@@ -5,11 +5,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{ffi::CStr, ops::Deref};
+use std::{borrow::Cow, ffi::CStr, ops::Deref};
 
 pub use jni;
 use jni::{
     objects::{JString, JValue, ReleaseMode},
+    strings::JNIString,
     JNIEnv,
 };
 
@@ -253,7 +254,17 @@ impl<'j> FromJavaToRust<'j> for JString<'j> {
     }
 }
 
-impl<'j> FromRustToJava<'j> for &'_ str {
+trait KnownString: Into<JNIString> {}
+
+impl KnownString for String {}
+impl KnownString for &'_ str {}
+impl KnownString for Cow<'_, str> {}
+impl KnownString for Box<str> {}
+
+impl<'j, S> FromRustToJava<'j> for S
+where
+    S: KnownString,
+{
     type Java = JString<'j>;
 
     fn rust_to_java(self, env: JNIEnv<'j>) -> Self::Java {

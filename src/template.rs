@@ -191,7 +191,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
         {{- endfor }}
     );
 
-    <{- function.rs_result -}>::rust_to_java(result, env)
+    result.rust_to_java(env)
 }
 {{ endfor }}
 {{ endfor }}
@@ -466,11 +466,11 @@ impl ObjectType {
 
     fn to_type_name_base(&self) -> RustTypeName {
         match *self {
-            Self::JClass => "jni::objects::JClass".into(),
-            Self::JByteBuffer => "jni::objects::JByteBuffer".into(),
-            Self::JObject => "jni::objects::JObject".into(),
-            Self::JString => "jni::objects::JString".into(),
-            Self::JThrowable => "jni::objects::JThrowable".into(),
+            Self::JClass => "jni::objects::JClass<'j>".into(),
+            Self::JByteBuffer => "jni::objects::JByteBuffer<'j>".into(),
+            Self::JObject => "jni::objects::JObject<'j>".into(),
+            Self::JString => "jni::objects::JString<'j>".into(),
+            Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
             Self::Object(ref obj) => obj.0.replace('/', "_").into(),
         }
     }

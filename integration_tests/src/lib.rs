@@ -98,7 +98,12 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
         Self { env }
     }
 
-    fn eatString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) -> () {
+    fn eatString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) {
         println!("eatString ate: {arg0}");
+    }
+
+    fn tieOffString(&self, this: net_bluejekyll_NativeStrings<'j>, arg0: String) -> String {
+        println!("tieOffString got: {arg0}");
+        arg0
     }
 }
