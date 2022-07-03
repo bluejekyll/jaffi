@@ -2,7 +2,7 @@ package net.bluejekyll;
 
 public class TestPrimitives {
     static void runTests() {
-        System.out.println("Running " + TestPrimitives.class.getName());
+        System.out.println(">>>> Running " + TestPrimitives.class.getName());
         test_void_void();
         test_void_long();
         test_void_long2();
@@ -10,7 +10,7 @@ public class TestPrimitives {
         test_add_values_native();
         test_print_hello();
         test_call_dad();
-        System.out.println(TestPrimitives.class.getName() + " tests succeeded");
+        System.out.println("<<<< " + TestPrimitives.class.getName() + " tests succeeded");
     }
 
     static void test_void_void() {

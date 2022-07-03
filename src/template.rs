@@ -35,6 +35,7 @@ use std::ops::Deref;
 
 use jaffi_support::\{
     FromJavaToRust,
+    FromRustToJava,
     jni::\{
         JNIEnv,
         objects::\{JByteBuffer, JClass, JObject, JValue},
@@ -65,15 +66,19 @@ impl<'j> std::ops::Deref for { obj.class_name -} \{
     }
 }
 
-impl<'j> FromJavaToRust for { obj.class_name } \{
+impl<'j> FromJavaToRust<'j> for { obj.class_name } \{
     type Rust = { obj.class_name };
 
-    fn java_to_rust(self) -> Self::Rust \{
+    fn java_to_rust(self, _env: JNIEnv<'j>) -> Self::Rust \{
         self
     }
+}
 
-    fn rust_to_java(rust: Self::Rust) -> Self \{
-        rust
+impl<'j> FromRustToJava<'j> for { obj.class_name } \{
+    type Java = { obj.class_name };
+
+    fn rust_to_java(self, _env: JNIEnv<'j>) -> Self \{
+        self
     }
 }
 
@@ -124,15 +129,19 @@ impl<'j> From<{ obj.obj_name -}> for JObject<'j> \{
     }
 }
 
-impl<'j> FromJavaToRust for { obj.obj_name } \{
+impl<'j> FromJavaToRust<'j> for { obj.obj_name } \{
     type Rust = { obj.obj_name };
 
-    fn java_to_rust(self) -> Self::Rust \{
+    fn java_to_rust(self, _env: JNIEnv<'j>) -> Self::Rust \{
         self
     }
+}
 
-    fn rust_to_java(rust: Self::Rust) -> Self \{
-        rust
+impl<'j> FromRustToJava<'j> for { obj.obj_name } \{
+    type Java = { obj.obj_name };
+
+    fn rust_to_java(self, _env: JNIEnv<'j>) -> Self \{
+        self
     }
 }
 {{ endfor }}
@@ -172,7 +181,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     let myself = { class.trait_impl }::from_env(env);
     
     {{- for arg in function.arguments }}
-    let { arg.name } = { arg.name }.java_to_rust();
+    let { arg.name } = { arg.name }.java_to_rust(env);
     {{- endfor }}
     
     let result = myself.{ function.fn_ffi_name } (
@@ -182,7 +191,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
         {{- endfor }}
     );
 
-    { function.result -}::rust_to_java(result)
+    <{- function.rs_result -}>::rust_to_java(result, env)
 }
 {{ endfor }}
 {{ endfor }}
@@ -333,7 +342,7 @@ impl Return {
 
     pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
         match self {
-            Self::Void => std::any::type_name::<()>().into(),
+            Self::Void => "()".into(),
             Self::Val(ty) => ty.to_rs_type_name(),
         }
     }
@@ -457,11 +466,11 @@ impl ObjectType {
 
     fn to_type_name_base(&self) -> RustTypeName {
         match *self {
-            Self::JClass => std::any::type_name::<JClass<'_>>().into(),
-            Self::JByteBuffer => std::any::type_name::<JByteBuffer<'_>>().into(),
-            Self::JObject => std::any::type_name::<JObject<'_>>().into(),
-            Self::JString => std::any::type_name::<JString<'_>>().into(),
-            Self::JThrowable => std::any::type_name::<JThrowable<'_>>().into(),
+            Self::JClass => "jni::objects::JClass".into(),
+            Self::JByteBuffer => "jni::objects::JByteBuffer".into(),
+            Self::JObject => "jni::objects::JObject".into(),
+            Self::JString => "jni::objects::JString".into(),
+            Self::JThrowable => "jni::objects::JThrowable".into(),
             Self::Object(ref obj) => obj.0.replace('/', "_").into(),
         }
     }
@@ -480,7 +489,14 @@ impl ObjectType {
 
     /// Returns the typename without a lifetime
     pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
-        self.to_type_name_base()
+        match *self {
+            Self::JClass => "jni::objects::JClass".into(),
+            Self::JByteBuffer => "jni::objects::JByteBuffer".into(),
+            Self::JObject => "jni::objects::JObject".into(),
+            Self::JString => "String".into(),
+            Self::JThrowable => "jni::objects::JThrowable".into(),
+            Self::Object(ref obj) => obj.0.replace('/', "_").into(),
+        }
     }
 }
 

@@ -1,4 +1,5 @@
-use jaffi_support::jni::JNIEnv;
+use jaffi_support::jni::{objects::JString, JNIEnv};
+use net_bluejekyll::net_bluejekyll_NativeStrings;
 
 use crate::net_bluejekyll::{
     net_bluejekyll_NativePrimitives, net_bluejekyll_NativePrimitivesClass,
@@ -82,5 +83,22 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
 
         let parent = this.as_net_bluejekyll_ParentClass();
         parent.call_1dad(self.env, arg0)
+    }
+}
+
+struct NativeStringsRsImpl<'j> {
+    env: JNIEnv<'j>,
+}
+
+impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
+    /// Costruct this type from the Java object
+    ///
+    /// Implementations should consider storing both values as types on the implementation object
+    fn from_env(env: JNIEnv<'j>) -> Self {
+        Self { env }
+    }
+
+    fn eatString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) -> () {
+        println!("eatString ate: {arg0}");
     }
 }
