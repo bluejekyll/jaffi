@@ -1,20 +1,8 @@
-
 package net.bluejekyll;
 
-/**
- * Simple test classes. This wires up the dylib, then checks all the inerfaces
- * ensuring that data is
- * being passed from Java to Rust and vice versa correctly.
- */
-public class TestCases {
-    public static void main(String[] args) {
-        System.out.println("Running tests");
-
-        String lib = System.getenv("JAFFI_LIB");
-        System.loadLibrary(lib);
-        System.out.printf("loadLibrary succeeded for %s%n", lib);
-
-        System.out.printf("running tests %s%n", lib);
+public class TestPrimitives {
+    static void runTests() {
+        System.out.println("Running " + TestPrimitives.class.getName());
         test_void_void();
         test_void_long();
         test_void_long2();
@@ -22,22 +10,21 @@ public class TestCases {
         test_add_values_native();
         test_print_hello();
         test_call_dad();
-
-        System.out.println("All tests succeeded");
+        System.out.println(TestPrimitives.class.getName() + " tests succeeded");
     }
 
     static void test_void_void() {
         // Now construct the NativeClass
 
-        NativeClass.void_void();
+        NativePrimitives.void_void();
     }
 
     static void test_void_long() {
-        NativeClass.void_long(100);
+        NativePrimitives.void_long(100);
     }
 
     static void test_void_long2() {
-        NativeClass obj = new NativeClass();
+        NativePrimitives obj = new NativePrimitives();
         long ret = obj.void_long(100, 10);
 
         if (ret != 110) {
@@ -46,7 +33,7 @@ public class TestCases {
     }
 
     static void test_long_int_int() {
-        NativeClass obj = new NativeClass();
+        NativePrimitives obj = new NativePrimitives();
         long ret = obj.long_int_int(Integer.MAX_VALUE, Integer.MAX_VALUE);
 
         long expect = (long) Integer.MAX_VALUE + (long) Integer.MAX_VALUE;
@@ -57,7 +44,7 @@ public class TestCases {
     }
 
     static void test_add_values_native() {
-        NativeClass obj = new NativeClass();
+        NativePrimitives obj = new NativePrimitives();
         long ret = obj.add_values_native(Integer.MAX_VALUE, Integer.MAX_VALUE);
 
         long expect = (long) Integer.MAX_VALUE + (long) Integer.MAX_VALUE;
@@ -69,14 +56,14 @@ public class TestCases {
     }
 
     static void test_print_hello() {
-        NativeClass.print_hello_native_static();
+        NativePrimitives.print_hello_native_static();
 
-        NativeClass obj = new NativeClass();
+        NativePrimitives obj = new NativePrimitives();
         obj.print_hello_native();
     }
 
     static void test_call_dad() {
-        NativeClass obj = new NativeClass();
+        NativePrimitives obj = new NativePrimitives();
         int expected = 732;
         int got = obj.call_dad_native(expected);
 
