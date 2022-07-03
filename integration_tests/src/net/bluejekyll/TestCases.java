@@ -22,6 +22,8 @@ public class TestCases {
         test_add_values_native();
         test_print_hello();
         test_call_dad();
+
+        System.out.println("All tests succeeded");
     }
 
     static void test_void_void() {
