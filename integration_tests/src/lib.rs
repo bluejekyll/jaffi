@@ -7,7 +7,7 @@ use crate::net_bluejekyll::{
 };
 
 mod net_bluejekyll {
-    #![allow(non_camel_case_types)]
+    #![allow(non_camel_case_types, dead_code, non_snake_case)]
 
     include!(concat!(env!("OUT_DIR"), "/generated_jaffi.rs"));
 }
