@@ -5,25 +5,21 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{borrow::Cow, ffi::CStr, ops::Deref};
+use std::{borrow::Cow, ops::Deref};
 
 pub use jni;
 use jni::{
-    objects::{JString, JValue, ReleaseMode},
+    objects::{JObject, JString, JValue},
     strings::JNIString,
     JNIEnv,
 };
 
-pub trait FromJavaToRust<'j> {
-    type Rust: 'j;
-
-    fn java_to_rust(self, _env: JNIEnv<'j>) -> Self::Rust;
+pub trait FromJavaToRust<'j, J: 'j> {
+    fn java_to_rust(java: J, _env: JNIEnv<'j>) -> Self;
 }
 
-pub trait FromRustToJava<'j> {
-    type Java: 'j;
-
-    fn rust_to_java(self, _env: JNIEnv<'j>) -> Self::Java;
+pub trait FromRustToJava<'j, R> {
+    fn rust_to_java(rust: R, _env: JNIEnv<'j>) -> Self;
 }
 
 /// Byte
@@ -31,19 +27,15 @@ pub trait FromRustToJava<'j> {
 #[repr(transparent)]
 pub struct JavaByte(pub jni::sys::jbyte);
 
-impl FromJavaToRust<'_> for JavaByte {
-    type Rust = u8;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0 as u8
+impl FromJavaToRust<'_, JavaByte> for u8 {
+    fn java_to_rust(java: JavaByte, _env: JNIEnv<'_>) -> Self {
+        java.0 as u8
     }
 }
 
-impl FromRustToJava<'_> for u8 {
-    type Java = JavaByte;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaByte(self as jni::sys::jbyte)
+impl FromRustToJava<'_, u8> for JavaByte {
+    fn rust_to_java(rust: u8, _env: JNIEnv<'_>) -> Self {
+        JavaByte(rust as jni::sys::jbyte)
     }
 }
 
@@ -55,20 +47,16 @@ impl FromRustToJava<'_> for u8 {
 #[repr(transparent)]
 pub struct JavaChar(pub jni::sys::jchar);
 
-impl FromJavaToRust<'_> for JavaChar {
-    type Rust = char;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        let ch = self.0 as u32;
+impl FromJavaToRust<'_, JavaChar> for char {
+    fn java_to_rust(java: JavaChar, _env: JNIEnv<'_>) -> Self {
+        let ch = java.0 as u32;
         unsafe { char::from_u32_unchecked(ch) }
     }
 }
 
-impl FromRustToJava<'_> for char {
-    type Java = JavaChar;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaChar(self as u32 as u16)
+impl FromRustToJava<'_, char> for JavaChar {
+    fn rust_to_java(rust: char, _env: JNIEnv<'_>) -> Self {
+        JavaChar(rust as u32 as u16)
     }
 }
 
@@ -77,19 +65,15 @@ impl FromRustToJava<'_> for char {
 #[repr(transparent)]
 pub struct JavaDouble(pub jni::sys::jdouble);
 
-impl FromJavaToRust<'_> for JavaDouble {
-    type Rust = f64;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0
+impl FromJavaToRust<'_, JavaDouble> for f64 {
+    fn java_to_rust(java: JavaDouble, _env: JNIEnv<'_>) -> Self {
+        java.0
     }
 }
 
-impl FromRustToJava<'_> for f64 {
-    type Java = JavaDouble;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaDouble(self)
+impl FromRustToJava<'_, f64> for JavaDouble {
+    fn rust_to_java(rust: f64, _env: JNIEnv<'_>) -> Self {
+        JavaDouble(rust)
     }
 }
 
@@ -98,19 +82,15 @@ impl FromRustToJava<'_> for f64 {
 #[repr(transparent)]
 pub struct JavaFloat(pub jni::sys::jfloat);
 
-impl FromJavaToRust<'_> for JavaFloat {
-    type Rust = f32;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0
+impl FromJavaToRust<'_, JavaFloat> for f32 {
+    fn java_to_rust(java: JavaFloat, _env: JNIEnv<'_>) -> Self {
+        java.0
     }
 }
 
-impl FromRustToJava<'_> for f32 {
-    type Java = JavaFloat;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaFloat(self)
+impl FromRustToJava<'_, f32> for JavaFloat {
+    fn rust_to_java(rust: f32, _env: JNIEnv<'_>) -> Self {
+        JavaFloat(rust)
     }
 }
 
@@ -119,19 +99,15 @@ impl FromRustToJava<'_> for f32 {
 #[repr(transparent)]
 pub struct JavaInt(pub jni::sys::jint);
 
-impl FromJavaToRust<'_> for JavaInt {
-    type Rust = i32;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0
+impl FromJavaToRust<'_, JavaInt> for i32 {
+    fn java_to_rust(java: JavaInt, _env: JNIEnv<'_>) -> Self {
+        java.0
     }
 }
 
-impl FromRustToJava<'_> for i32 {
-    type Java = JavaInt;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaInt(self)
+impl FromRustToJava<'_, i32> for JavaInt {
+    fn rust_to_java(rust: i32, _env: JNIEnv<'_>) -> Self {
+        JavaInt(rust)
     }
 }
 
@@ -140,19 +116,15 @@ impl FromRustToJava<'_> for i32 {
 #[repr(transparent)]
 pub struct JavaLong(pub jni::sys::jlong);
 
-impl FromJavaToRust<'_> for JavaLong {
-    type Rust = i64;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0
+impl FromJavaToRust<'_, JavaLong> for i64 {
+    fn java_to_rust(java: JavaLong, _env: JNIEnv<'_>) -> Self {
+        java.0
     }
 }
 
-impl FromRustToJava<'_> for i64 {
-    type Java = JavaLong;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaLong(self)
+impl FromRustToJava<'_, i64> for JavaLong {
+    fn rust_to_java(rust: i64, _env: JNIEnv<'_>) -> Self {
+        JavaLong(rust)
     }
 }
 
@@ -161,19 +133,15 @@ impl FromRustToJava<'_> for i64 {
 #[repr(transparent)]
 pub struct JavaShort(pub jni::sys::jshort);
 
-impl FromJavaToRust<'_> for JavaShort {
-    type Rust = i16;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0
+impl FromJavaToRust<'_, JavaShort> for i16 {
+    fn java_to_rust(java: JavaShort, _env: JNIEnv<'_>) -> Self {
+        java.0
     }
 }
 
-impl FromRustToJava<'_> for i16 {
-    type Java = JavaShort;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaShort(self)
+impl FromRustToJava<'_, i16> for JavaShort {
+    fn rust_to_java(rust: i16, _env: JNIEnv<'_>) -> Self {
+        JavaShort(rust)
     }
 }
 
@@ -182,19 +150,15 @@ impl FromRustToJava<'_> for i16 {
 #[repr(transparent)]
 pub struct JavaBoolean(pub jni::sys::jboolean);
 
-impl FromJavaToRust<'_> for JavaBoolean {
-    type Rust = bool;
-
-    fn java_to_rust(self, _env: JNIEnv<'_>) -> Self::Rust {
-        self.0 == jni::sys::JNI_TRUE
+impl FromJavaToRust<'_, JavaBoolean> for bool {
+    fn java_to_rust(java: JavaBoolean, _env: JNIEnv<'_>) -> Self {
+        java.0 == jni::sys::JNI_TRUE
     }
 }
 
-impl FromRustToJava<'_> for bool {
-    type Java = JavaBoolean;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        if self {
+impl FromRustToJava<'_, bool> for JavaBoolean {
+    fn rust_to_java(rust: bool, _env: JNIEnv<'_>) -> Self {
+        if rust {
             JavaBoolean(jni::sys::JNI_TRUE)
         } else {
             JavaBoolean(jni::sys::JNI_FALSE)
@@ -207,26 +171,23 @@ impl FromRustToJava<'_> for bool {
 #[repr(transparent)]
 pub struct JavaVoid(());
 
-impl FromJavaToRust<'_> for JavaVoid {
-    type Rust = ();
-
-    fn java_to_rust(self, env: JNIEnv<'_>) -> Self::Rust {}
+impl FromJavaToRust<'_, JavaVoid> for () {
+    fn java_to_rust(_java: JavaVoid, _env: JNIEnv<'_>) -> Self {}
 }
 
-impl FromRustToJava<'_> for () {
-    type Java = JavaVoid;
-
-    fn rust_to_java(self, _env: JNIEnv<'_>) -> Self::Java {
-        JavaVoid(())
+impl FromRustToJava<'_, ()> for JavaVoid {
+    fn rust_to_java(rust: (), _env: JNIEnv<'_>) -> Self {
+        JavaVoid(rust)
     }
 }
 
 /// Strings
-impl<'j> FromJavaToRust<'j> for JString<'j> {
-    type Rust = String;
-
+impl<'j, J> FromJavaToRust<'j, J> for String
+where
+    J: 'j + Deref<Target = JObject<'j>>,
+{
     // TODO: there's probably a somewhat cheaper option to reduce all the allocations here.
-    fn java_to_rust(self, env: JNIEnv<'j>) -> Self::Rust {
+    fn java_to_rust(java: J, env: JNIEnv<'j>) -> Self {
         // We're going to have Java properly return utf-8 bytes from a String rather than the BS that is the "reduced utf-8" in JNI
         let utf8_arg = env
             .new_string("UTF-8")
@@ -235,7 +196,7 @@ impl<'j> FromJavaToRust<'j> for JString<'j> {
         // TODO: cache the method_id...
         let byte_array = env
             .call_method(
-                self,
+                *java,
                 "getBytes",
                 "(Ljava/lang/String;)[B",
                 &[JValue::Object(utf8_arg.into())],
@@ -261,14 +222,90 @@ impl KnownString for &'_ str {}
 impl KnownString for Cow<'_, str> {}
 impl KnownString for Box<str> {}
 
-impl<'j, S> FromRustToJava<'j> for S
+impl<'j, S> FromRustToJava<'j, S> for JString<'j>
 where
     S: KnownString,
 {
-    type Java = JString<'j>;
-
-    fn rust_to_java(self, env: JNIEnv<'j>) -> Self::Java {
+    fn rust_to_java(rust: S, env: JNIEnv<'j>) -> Self {
         // There's basically no "cheap" way to do this
-        env.new_string(self).expect("bad string sent to Java")
+        env.new_string(rust).expect("bad string sent to Java")
     }
 }
+
+/// Convert from a JValue (return type in Java) into the Rust type
+///
+/// This is infallible because the generated code using it should "know" that the type is already correct
+pub trait FromJavaValue<'j, J>: 'static + Sized {
+    fn from_jvalue(env: JNIEnv<'j>, jvalue: JValue<'j>) -> Self;
+}
+
+impl<'j, T, J> FromJavaValue<'j, J> for T
+where
+    T: 'static,
+    T: FromJavaToRust<'j, J>,
+    J: 'j,
+    J: From<JObject<'j>>,
+{
+    fn from_jvalue(env: JNIEnv<'j>, jvalue: JValue<'j>) -> Self {
+        let object = jvalue.l().expect("wrong type conversion");
+        Self::java_to_rust(object.into(), env)
+    }
+}
+
+macro_rules! from_java_value {
+    ($jtype: ident, $rtype:ty, $jval_func: ident) => {
+        impl<'j> FromJavaValue<'j, $jtype> for $rtype {
+            fn from_jvalue(env: JNIEnv<'j>, jvalue: JValue<'j>) -> Self {
+                let t = $jtype(jvalue.$jval_func().expect("wrong type conversion"));
+                Self::java_to_rust(t, env)
+            }
+        }
+    };
+}
+
+from_java_value!(JavaByte, u8, b);
+from_java_value!(JavaChar, char, c);
+from_java_value!(JavaDouble, f64, d);
+from_java_value!(JavaFloat, f32, f);
+from_java_value!(JavaInt, i32, i);
+from_java_value!(JavaLong, i64, j);
+from_java_value!(JavaShort, i16, s);
+from_java_value!(JavaVoid, (), v);
+
+/// Convert from Rust type into JValue
+pub trait IntoJavaValue<'j, J: 'j> {
+    fn into_java_value(self, env: JNIEnv<'j>) -> JValue<'j>;
+}
+
+impl<'j, J, R> IntoJavaValue<'j, J> for R
+where
+    J: 'j,
+    R: 'j,
+    J: FromRustToJava<'j, R>,
+    J: Deref<Target = JObject<'j>>,
+{
+    fn into_java_value(self, env: JNIEnv<'j>) -> JValue<'j> {
+        let java = J::rust_to_java(self, env);
+        JValue::Object(*java)
+    }
+}
+
+macro_rules! into_java_value {
+    ($jtype: ident, $rtype:ty) => {
+        impl IntoJavaValue<'_, $jtype> for $rtype {
+            fn into_java_value(self, env: JNIEnv<'_>) -> JValue<'_> {
+                let jval = $jtype::rust_to_java(self, env);
+                JValue::from(jval.0)
+            }
+        }
+    };
+}
+
+into_java_value!(JavaByte, u8);
+into_java_value!(JavaChar, char);
+into_java_value!(JavaDouble, f64);
+into_java_value!(JavaFloat, f32);
+into_java_value!(JavaInt, i32);
+into_java_value!(JavaLong, i64);
+into_java_value!(JavaShort, i16);
+into_java_value!(JavaVoid, ());

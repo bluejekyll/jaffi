@@ -1,10 +1,9 @@
 use std::{
     borrow::Cow,
     error::Error,
-    fs::File,
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
-    process::{self, Command},
+    process::Command,
 };
 
 use jaffi::Jaffi;

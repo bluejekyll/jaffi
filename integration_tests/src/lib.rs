@@ -1,4 +1,4 @@
-use jaffi_support::jni::{objects::JString, JNIEnv};
+use jaffi_support::jni::JNIEnv;
 use net_bluejekyll::net_bluejekyll_NativeStrings;
 
 use crate::net_bluejekyll::{
@@ -7,6 +7,8 @@ use crate::net_bluejekyll::{
 };
 
 mod net_bluejekyll {
+    #![allow(non_camel_case_types)]
+
     include!(concat!(env!("OUT_DIR"), "/generated_jaffi.rs"));
 }
 
@@ -102,8 +104,15 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
         println!("eatString ate: {arg0}");
     }
 
-    fn tieOffString(&self, this: net_bluejekyll_NativeStrings<'j>, arg0: String) -> String {
+    fn tieOffString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) -> String {
         println!("tieOffString got: {arg0}");
         arg0
+    }
+
+    fn returnStringNative(&self, this: net_bluejekyll_NativeStrings<'j>, append: String) -> String {
+        let ret = this.returnString(self.env, append);
+        println!("returnStringNative got: {ret}");
+
+        ret
     }
 }

@@ -9,7 +9,7 @@
 
 #![deny(missing_docs)]
 
-use std::{fmt, io};
+use std::fmt;
 
 use enum_as_inner::EnumAsInner;
 use thiserror::Error;
@@ -93,6 +93,6 @@ impl From<Error> for String {
 
 /// A trait marking a type which implements From<Error> and
 /// std::error::Error types as well as Clone + Send
-pub trait FromError: From<Error> + std::error::Error + Clone {}
+pub(crate) trait FromError: From<Error> + std::error::Error + Clone {}
 
 impl<E> FromError for E where E: From<Error> + std::error::Error + Clone {}

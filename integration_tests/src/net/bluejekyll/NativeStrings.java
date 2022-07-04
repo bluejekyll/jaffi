@@ -1,13 +1,18 @@
 package net.bluejekyll;
 
 public class NativeStrings {
-    /// Test passing a string to Rust
+    public static String retString = "I am a return string and i❤🦀";
+
+    // Test passing a string to Rust
     public native void eatString(String str);
 
+    // This just roundtrips the string
     public native String tieOffString(String str);
 
-    // /// Return a String from Java to Rust
-    // public String returnString() {
-    // return "I am a return string";
-    // }
+    public native String returnStringNative(String append);
+
+    // Return a String from Java to Rust
+    public String returnString(String append) {
+        return retString + append;
+    }
 }

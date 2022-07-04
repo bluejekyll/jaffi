@@ -5,18 +5,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{
-    borrow::Cow,
-    fmt::{self, Write},
-};
+use std::{borrow::Cow, fmt};
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
 use jaffi_support::{
-    jni::{
-        objects::{JByteBuffer, JClass, JObject, JString, JThrowable},
-        sys,
-    },
-    JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
+    jni::sys, JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort,
+    JavaVoid,
 };
 use serde::Serialize;
 
@@ -31,16 +25,15 @@ pub(crate) static JAVA_FUNCTION_CALL: &str = "JAVA_FUNCTION_CALL";
 ///
 /// This generates the trait for each of the FFI functions.
 static RUST_FFI_TEMPLATE: &str = r#"
-use std::ops::Deref;
-
 use jaffi_support::\{
     FromJavaToRust,
     FromRustToJava,
+    FromJavaValue,
+    IntoJavaValue,
     jni::\{
         JNIEnv,
-        objects::\{JByteBuffer, JClass, JObject, JValue},
+        objects::\{JClass, JObject, JValue},
         self,
-        sys::jlong,
     }
 };
 
@@ -50,7 +43,7 @@ use jaffi_support::\{
 #[repr(transparent)]
 pub struct { obj.class_name -}(JClass<'j>);
 
-impl<'j> { obj.static_trait_name } for { obj.class_name } \{}
+impl<'j> { obj.static_trait_name }<'j> for { obj.class_name } \{}
 
 impl<'j> { obj.class_name -} \{
     fn java_class_desc() -> &'static str \{
@@ -66,19 +59,15 @@ impl<'j> std::ops::Deref for { obj.class_name -} \{
     }
 }
 
-impl<'j> FromJavaToRust<'j> for { obj.class_name } \{
-    type Rust = { obj.class_name };
-
-    fn java_to_rust(self, _env: JNIEnv<'j>) -> Self::Rust \{
-        self
+impl<'j> FromJavaToRust<'j, { obj.class_name }> for { obj.class_name } \{
+    fn java_to_rust(java: { obj.class_name }, _env: JNIEnv<'j>) -> Self \{
+        java
     }
 }
 
-impl<'j> FromRustToJava<'j> for { obj.class_name } \{
-    type Java = { obj.class_name };
-
-    fn rust_to_java(self, _env: JNIEnv<'j>) -> Self \{
-        self
+impl<'j> FromRustToJava<'j, { obj.class_name }> for { obj.class_name } \{
+    fn rust_to_java(rust: { obj.class_name }, _env: JNIEnv<'j>) -> Self \{
+        rust
     }
 }
 
@@ -86,7 +75,7 @@ impl<'j> FromRustToJava<'j> for { obj.class_name } \{
 #[repr(transparent)]
 pub struct { obj.obj_name -}(JObject<'j>);
 
-impl<'j> { obj.static_trait_name } for { obj.obj_name } \{}
+impl<'j> { obj.static_trait_name }<'j> for { obj.obj_name } \{}
 
 impl<'j> { obj.obj_name -} \{
     /// Returns the type name in java, e.g. `Object` is `"java/lang/Object"`
@@ -107,7 +96,7 @@ impl<'j> { obj.obj_name -} \{
     {{- endfor }}
 }
 
-pub trait { obj.static_trait_name } \{
+pub trait { obj.static_trait_name }<'j> \{
     {{ for function in obj.methods }}
     {{ if function.is_static }}
     {{ call JAVA_FUNCTION_CALL with function }}
@@ -129,19 +118,15 @@ impl<'j> From<{ obj.obj_name -}> for JObject<'j> \{
     }
 }
 
-impl<'j> FromJavaToRust<'j> for { obj.obj_name } \{
-    type Rust = { obj.obj_name };
-
-    fn java_to_rust(self, _env: JNIEnv<'j>) -> Self::Rust \{
-        self
+impl<'j> FromJavaToRust<'j, { obj.obj_name }> for { obj.obj_name } \{
+    fn java_to_rust(java: { obj.obj_name }, _env: JNIEnv<'j>) -> Self \{
+        java
     }
 }
 
-impl<'j> FromRustToJava<'j> for { obj.obj_name } \{
-    type Java = { obj.obj_name };
-
-    fn rust_to_java(self, _env: JNIEnv<'j>) -> Self \{
-        self
+impl<'j> FromRustToJava<'j, { obj.obj_name }> for { obj.obj_name } \{
+    fn rust_to_java(rust: { obj.obj_name }, _env: JNIEnv<'j>) -> Self \{
+        rust
     }
 }
 {{ endfor }}
@@ -181,7 +166,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     let myself = { class.trait_impl }::from_env(env);
     
     {{- for arg in function.arguments }}
-    let { arg.name } = { arg.name }.java_to_rust(env);
+    let { arg.name } = { arg.rs_ty }::java_to_rust({ arg.name }, env);
     {{- endfor }}
     
     let result = myself.{ function.fn_ffi_name } (
@@ -191,7 +176,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
         {{- endfor }}
     );
 
-    result.rust_to_java(env)
+    <{ function.result }>::rust_to_java(result, env)
 }
 {{ endfor }}
 {{ endfor }}
@@ -206,43 +191,38 @@ static JAVA_FUNCTION_CALL_TEMPLATE: &str = r#"
     /// * `env` - this should be the same JNIEnv "owning" this object
     {{ if not is_static }}pub{{ endif }} fn { fn_ffi_name }(
         &self,
-        env: JNIEnv<'_>,
+        env: JNIEnv<'j>,
         {{- for arg in arguments }}
         { arg.name }: { arg.rs_ty },
         {{- endfor }}  
     ) -> { rs_result -} \{
-        let args: &[JValue<'_>] = &[
+        let args: &[JValue<'j>] = &[
             {{- for arg in arguments }}
-            JValue::from({ arg.name }),
+            <{arg.rs_ty} as IntoJavaValue<'j, {arg.ty}>>::into_java_value({arg.name}, env),
             {{- endfor }} 
         ];
-
-        {{ if is_static }}
-        let jvalue = match env.call_static_method(
+ 
+        let rust_value = 
+        {{- if is_static -}}
+        match env.call_static_method(
             "{ object_java_desc }",
             "{ name }",
             "{ signature }",
             args
         ) \{
-            Ok(jvalue) => jvalue,
-            Err(e) => panic!("error calling java, \{e}"),
-        };
-        {{ else }}
-        let jvalue = match env.call_method(
+        {{- else -}}
+        match env.call_method(
             self.0,
             "{ name }",
             "{ signature }",
             args
         ) \{
-            Ok(jvalue) => jvalue,
+        {{ endif }}
+            Ok(jvalue) => <{ rs_result } as FromJavaValue<{ result }>>::from_jvalue(env, jvalue),
             Err(e) => panic!("error calling java, \{e}"),
         };
-        {{ endif }}
 
-        match jvalue.try_into() \{
-            Ok(ret) => ret,
-            Err(e) => panic!("could not convert to rust from jvalue, \{e}"),
-        }
+        rust_value
     }
 "#;
 
@@ -517,7 +497,7 @@ impl ObjectType {
 impl From<JavaDesc> for ObjectType {
     fn from(java_desc: JavaDesc) -> Self {
         let path_name = java_desc.as_str();
-        match dbg!(path_name) {
+        match path_name {
             _ if &*path_name == "java/lang/Class" => Self::JClass,
             _ if &*path_name == "java/nio/ByteBuffer" => Self::JByteBuffer,
             _ if &*path_name == "java/lang/Object" => Self::JObject,

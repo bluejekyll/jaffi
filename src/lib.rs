@@ -27,7 +27,6 @@ pub use error::{Error, ErrorKind};
 use template::{
     Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustFfi, RustTypeName,
 };
-use tinytemplate::TinyTemplate;
 
 use std::{
     borrow::Cow,
