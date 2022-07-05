@@ -9,8 +9,9 @@ use std::{borrow::Cow, fmt};
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
 use jaffi_support::{
-    jni::sys, JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort,
-    JavaVoid,
+    arrays::{JavaByteArray, UnsupportedArray},
+    jni::sys,
+    JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
 };
 use serde::Serialize;
 
@@ -166,7 +167,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     let myself = { class.trait_impl }::from_env(env);
     
     {{- for arg in function.arguments }}
-    let { arg.name } = { arg.rs_ty }::java_to_rust({ arg.name }, env);
+    let { arg.name } = <{ arg.rs_ty }>::java_to_rust({ arg.name }, env);
     {{- endfor }}
     
     let result = myself.{ function.fn_ffi_name } (
@@ -299,7 +300,6 @@ impl From<ObjectType> for Object {
     }
 }
 
-#[derive(Serialize)]
 pub(crate) enum Return {
     Void,
     Val(JniType),
@@ -328,7 +328,7 @@ impl Return {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
 pub(crate) enum BaseJniTy {
     ///Byte
     Jbyte,
@@ -350,12 +350,12 @@ pub(crate) enum BaseJniTy {
     Jobject(ObjectType),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub(crate) enum JniType {
     /// Non recursive types
     Ty(BaseJniTy),
     /// Array,
-    Jarray { dimensions: usize, ty: BaseJniTy },
+    Jarray(JavaArray),
 }
 
 impl JniType {
@@ -374,7 +374,7 @@ impl JniType {
             Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<JavaBoolean>().into(),
             Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_type_name_base(),
             // in JNI the array is always jarray
-            Self::Jarray { .. } => std::any::type_name::<sys::jarray>().into(),
+            Self::Jarray(jarray) => jarray.to_jni_type_name(),
         }
     }
 
@@ -390,7 +390,7 @@ impl JniType {
             Self::Ty(BaseJniTy::Jboolean) => std::any::type_name::<bool>().into(),
             Self::Ty(BaseJniTy::Jobject(obj)) => obj.to_rs_type_name(),
             // in JNI the array is always jarray
-            Self::Jarray { .. } => std::any::type_name::<sys::jarray>().into(),
+            Self::Jarray(jarray) => jarray.to_rs_type_name(),
         }
     }
 
@@ -414,11 +414,37 @@ impl JniType {
 
         match field_type {
             FieldType::Ty(ty) => Self::Ty(base_jni_ty_from_java(ty)),
-            FieldType::Array { dimensions, ty } => Self::Jarray {
+            FieldType::Array { dimensions, ty } => Self::Jarray(JavaArray {
                 dimensions: *dimensions,
                 ty: base_jni_ty_from_java(ty),
-            },
+            }),
         }
+    }
+}
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub(crate) struct JavaArray {
+    dimensions: usize,
+    ty: BaseJniTy,
+}
+
+impl JavaArray {
+    /// Outputs the form needed in jni function interfaces
+    ///
+    /// These must all be marked `#[repr(transparent)]` in order to be used at the FFI boundary
+    pub(crate) fn to_jni_type_name(&self) -> RustTypeName {
+        if self.dimensions != 1 {
+            return "jaffi_support::arrays::UnsupportedArray<'j>".into();
+        }
+
+        match self.ty {
+            BaseJniTy::Jbyte => "jaffi_support::arrays::JavaByteArray<'j>".into(),
+            _ => std::any::type_name::<UnsupportedArray<'_>>().into(),
+        }
+    }
+
+    pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
+        self.to_jni_type_name()
     }
 }
 

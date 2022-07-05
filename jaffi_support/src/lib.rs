@@ -7,12 +7,18 @@
 
 use std::{borrow::Cow, ops::Deref};
 
+pub mod arrays;
+
 pub use jni;
 use jni::{
     objects::{JObject, JString, JValue},
     strings::JNIString,
     JNIEnv,
 };
+
+pub trait JavaPrimitive {}
+
+impl<'j, T> JavaPrimitive for T where T: Deref<Target = JObject<'j>> {}
 
 pub trait FromJavaToRust<'j, J: 'j> {
     fn java_to_rust(java: J, _env: JNIEnv<'j>) -> Self;
@@ -309,3 +315,18 @@ into_java_value!(JavaInt, i32);
 into_java_value!(JavaLong, i64);
 into_java_value!(JavaShort, i16);
 into_java_value!(JavaVoid, ());
+
+macro_rules! java_primitive {
+    ($jtype: ty) => {
+        impl JavaPrimitive for $jtype {}
+    };
+}
+
+java_primitive!(JavaByte);
+java_primitive!(JavaChar);
+java_primitive!(JavaDouble);
+java_primitive!(JavaFloat);
+java_primitive!(JavaInt);
+java_primitive!(JavaLong);
+java_primitive!(JavaShort);
+java_primitive!(JavaVoid);

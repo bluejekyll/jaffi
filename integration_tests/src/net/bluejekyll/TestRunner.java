@@ -17,6 +17,7 @@ public class TestRunner {
         System.out.println("Starting test run");
         TestPrimitives.runTests();
         TestStrings.runTests();
+        TestArrays.runTests();
         System.out.println("All tests succeeded");
     }
 

@@ -116,3 +116,52 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
         ret
     }
 }
+
+pub(crate) struct NativeArraysRsImpl<'j> {
+    env: JNIEnv<'j>,
+}
+
+impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
+    fn from_env(env: jaffi_support::jni::JNIEnv<'j>) -> Self {
+        Self { env }
+    }
+
+    fn sendBytes(
+        &self,
+        this: net_bluejekyll::net_bluejekyll_NativeArraysClass<'j>,
+        arg0: jaffi_support::arrays::JavaByteArray<'_>,
+    ) {
+        let slice = arg0.as_slice(&self.env).expect("no data?");
+
+        println!("sendBytes: {:x?}", &slice[..]);
+    }
+
+    fn getBytes(
+        &self,
+        this: net_bluejekyll::net_bluejekyll_NativeArraysClass<'j>,
+        arg0: jaffi_support::arrays::JavaByteArray<'j>,
+    ) -> jaffi_support::arrays::JavaByteArray<'j> {
+        println!(
+            "getBytes: {:x?}",
+            &arg0.as_slice(&self.env).expect("no data")[..]
+        );
+        arg0
+    }
+
+    fn newBytes(
+        &self,
+        this: net_bluejekyll::net_bluejekyll_NativeArraysClass<'j>,
+    ) -> jaffi_support::arrays::JavaByteArray<'j> {
+        let bytes: [u8; 4] = [0xCA, 0xFE, 0xBA, 0xBE];
+
+        let jarray = jaffi_support::arrays::JavaByteArray::new(self.env, &bytes)
+            .expect("could not create array");
+
+        println!(
+            "newBytes: {:x?}",
+            &jarray.as_slice(&self.env).expect("no data")[..]
+        );
+
+        jarray
+    }
+}

@@ -91,6 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let classes = vec![
         Cow::from("net.bluejekyll.NativePrimitives"),
         Cow::from("net.bluejekyll.NativeStrings"),
+        Cow::from("net.bluejekyll.NativeArrays"),
     ];
     let classes_to_wrap = vec![Cow::from("net.bluejekyll.ParentClass")];
     let output_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
