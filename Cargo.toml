@@ -14,7 +14,7 @@ members = [
 ]
 
 [dependencies]
-cafebabe = { version = "0.5.0", path = "../cafebabe" }
+cafebabe = { version = "0.5.0", git = "https://github.com/staktrace/cafebabe.git", branch = "main" }
 enum-as-inner = "0.5"
 jaffi_support = { version = "0.1.0", path = "./jaffi_support" }
 serde = { version = "1.0", features = ["derive"] }

@@ -17,6 +17,7 @@ checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
 [[package]]
 name = "cafebabe"
 version = "0.5.0"
+source = "git+https://github.com/staktrace/cafebabe.git?branch=main#a347d3b5127b26b6d34f02882624236cbc273d0b"
 dependencies = [
  "bitflags",
  "cesu8",
