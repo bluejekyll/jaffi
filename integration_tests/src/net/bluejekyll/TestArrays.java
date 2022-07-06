@@ -6,6 +6,7 @@ public class TestArrays {
         TestArrays.testSendBytes();
         TestArrays.testGetBytes();
         TestArrays.testNewBytes();
+        TestArrays.testNewBytesJava();
         System.out.println("<<<< " + TestStrings.class.getName() + " tests succeeded");
     }
 
@@ -26,6 +27,17 @@ public class TestArrays {
     static void testNewBytes() {
         byte[] expect = java.util.HexFormat.of().parseHex("CAFEBABE");
         byte[] got = NativeArrays.newBytes();
+
+        if (!java.util.Arrays.equals(got, expect)) {
+            throw new RuntimeException("Expected " + expect + " got " + got);
+        }
+    }
+
+    static void testNewBytesJava() {
+        byte[] expect = java.util.HexFormat.of().parseHex("CAFEBABE");
+
+        NativeArrays arrays = new NativeArrays();
+        byte[] got = arrays.newJavaBytesNative();
 
         if (!java.util.Arrays.equals(got, expect)) {
             throw new RuntimeException("Expected " + expect + " got " + got);

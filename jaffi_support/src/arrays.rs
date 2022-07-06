@@ -20,10 +20,7 @@ use super::*;
 /// * `N` - The number of dimensions in the array
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-pub struct UnsupportedArray<'j> {
-    pub internal: jni::sys::jarray,
-    lifetime: PhantomData<&'j ()>,
-}
+pub struct UnsupportedArray<'j>(pub JObject<'j>);
 
 /// Arrays
 ///
@@ -34,13 +31,13 @@ pub struct UnsupportedArray<'j> {
 /// * `N` - The number of dimensions in the array
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-pub struct JavaByteArray<'j>(jni::sys::jbyteArray, PhantomData<&'j ()>);
+pub struct JavaByteArray<'j>(JObject<'j>);
 
 impl<'j> JavaByteArray<'j> {
     /// Creates a new array from containing the data from `from`
     pub fn new(env: JNIEnv<'j>, from: &[u8]) -> Result<Self, jni::errors::Error> {
         env.byte_array_from_slice(from)
-            .map(|jarray| Self(jarray, PhantomData))
+            .map(|jarray| Self(jarray.into()))
     }
 
     /// A read-only wrapper around the java array
@@ -48,7 +45,7 @@ impl<'j> JavaByteArray<'j> {
         &'s self,
         env: &'s JNIEnv<'j>,
     ) -> Result<JavaByteArrayRef<'s, 'j>, jni::errors::Error> {
-        env.get_byte_array_elements(self.0, jni::objects::ReleaseMode::NoCopyBack)
+        env.get_byte_array_elements(*self.0, jni::objects::ReleaseMode::NoCopyBack)
             .map(JavaByteArrayRef)
     }
 }
@@ -64,6 +61,12 @@ impl<'j> FromJavaToRust<'j, Self> for JavaByteArray<'j> {
 impl<'j> FromRustToJava<'j, Self> for JavaByteArray<'j> {
     fn rust_to_java(rust: Self, _env: JNIEnv<'j>) -> Self {
         rust
+    }
+}
+
+impl<'j> From<JObject<'j>> for JavaByteArray<'j> {
+    fn from(jobject: JObject<'j>) -> Self {
+        Self(jobject)
     }
 }
 

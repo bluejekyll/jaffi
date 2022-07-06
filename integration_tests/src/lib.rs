@@ -164,4 +164,18 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
 
         jarray
     }
+
+    fn newJavaBytesNative(
+        &self,
+        this: net_bluejekyll::net_bluejekyll_NativeArrays<'j>,
+    ) -> jaffi_support::arrays::JavaByteArray<'j> {
+        let bytes = this.newJavaBytes(self.env);
+
+        println!(
+            "newJavaBytesNative: {:x?}",
+            &bytes.as_slice(&self.env).expect("no data")[..]
+        );
+
+        bytes
+    }
 }

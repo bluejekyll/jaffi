@@ -241,13 +241,12 @@ where
 /// Convert from a JValue (return type in Java) into the Rust type
 ///
 /// This is infallible because the generated code using it should "know" that the type is already correct
-pub trait FromJavaValue<'j, J>: 'static + Sized {
+pub trait FromJavaValue<'j, J>: Sized {
     fn from_jvalue(env: JNIEnv<'j>, jvalue: JValue<'j>) -> Self;
 }
 
 impl<'j, T, J> FromJavaValue<'j, J> for T
 where
-    T: 'static,
     T: FromJavaToRust<'j, J>,
     J: 'j,
     J: From<JObject<'j>>,
