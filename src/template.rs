@@ -143,10 +143,11 @@ pub trait { class.trait_name }<'j> \{
     /// 
     /// Implementations should consider storing both values as types on the implementation object
     fn from_env(env: JNIEnv<'j>) -> Self;
+
 {{ for function in class.functions }}
     fn { function.fn_ffi_name }(
         &self,
-        this: {{ if function.is_static }}{ function.class_ffi_name -}{{ else }}{ function.object_ffi_name -}{{ endif }},
+        {{ if function.is_static }}class: { function.class_ffi_name -}{{ else }}this: { function.object_ffi_name -}{{ endif }},
         {{- for arg in function.arguments }}
         { arg.name }: { arg.rs_ty },
         {{- endfor }}    
@@ -159,7 +160,7 @@ pub trait { class.trait_name }<'j> \{
 #[no_mangle]
 pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     env: JNIEnv<'j>,
-    this: {{ if function.is_static }}{ function.class_ffi_name -}{{ else }}{ function.object_ffi_name -}{{ endif }},
+    {{ if function.is_static }}class: { function.class_ffi_name -}{{ else }}this: { function.object_ffi_name -}{{ endif }},
     {{- for arg in function.arguments }}
     { arg.name }: { arg.ty },
     {{- endfor }}
@@ -171,7 +172,7 @@ pub extern "system" fn {function.fn_export_ffi_name -}<'j>(
     {{- endfor }}
     
     let result = myself.{ function.fn_ffi_name } (
-        this,
+        {{ if function.is_static }}class{{ else }}this{{ endif }},
         {{- for arg in function.arguments }}
         { arg.name },
         {{- endfor }}
