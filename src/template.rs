@@ -8,6 +8,7 @@
 use std::{borrow::Cow, fmt};
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
+use enum_as_inner::EnumAsInner;
 use jaffi_support::{
     arrays::{JavaByteArray, UnsupportedArray},
     jni::sys,
@@ -227,7 +228,7 @@ static JAVA_FUNCTION_CALL_TEMPLATE: &str = r#"
         ) \{
         {{ endif }}
             Ok(jvalue) => <{ rs_result } as FromJavaValue<{ result }>>::from_jvalue(env, jvalue),
-            Err(e) => panic!("error calling java, \{e}"),
+            Err(e) => panic!("error calling java, \{}", e),
         };
 
         rust_value
@@ -307,6 +308,7 @@ impl From<ObjectType> for Object {
     }
 }
 
+#[derive(EnumAsInner)]
 pub(crate) enum Return {
     Void,
     Val(JniType),

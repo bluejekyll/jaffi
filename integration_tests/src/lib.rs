@@ -1,10 +1,7 @@
 use jaffi_support::jni::JNIEnv;
 use net_bluejekyll::net_bluejekyll_NativeStrings;
 
-use crate::net_bluejekyll::{
-    net_bluejekyll_NativePrimitives, net_bluejekyll_NativePrimitivesClass,
-    Static_net_bluejekyll_NativePrimitives,
-};
+use crate::net_bluejekyll::*;
 
 mod net_bluejekyll {
     #![allow(non_camel_case_types, dead_code, non_snake_case)]
@@ -93,6 +90,13 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         arg0: net_bluejekyll::java_io_File<'j>,
     ) -> net_bluejekyll::java_io_File<'j> {
         arg0
+    }
+
+    fn unsupported_1return_1native(
+        &self,
+        this: net_bluejekyll_NativePrimitives<'j>,
+    ) -> net_bluejekyll_Unsupported2<'j> {
+        panic!("this is just a compilation test")
     }
 }
 

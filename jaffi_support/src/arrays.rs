@@ -7,7 +7,7 @@
 
 use std::marker::PhantomData;
 
-use jni::objects::AutoArray;
+use jni::objects::{AutoArray, JByteBuffer};
 
 use super::*;
 
@@ -70,6 +70,20 @@ impl<'j> From<JObject<'j>> for JavaByteArray<'j> {
     }
 }
 
+impl<'j> From<JavaByteArray<'j>> for JObject<'j> {
+    fn from(jarray: JavaByteArray<'j>) -> Self {
+        jarray.0
+    }
+}
+
+impl<'j> Deref for JavaByteArray<'j> {
+    type Target = JObject<'j>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub struct JavaByteArrayRef<'s: 'j, 'j>(AutoArray<'s, 'j, jni::sys::jbyte>);
 
 impl<'s: 'j, 'j> Deref for JavaByteArrayRef<'s, 'j> {
@@ -80,5 +94,21 @@ impl<'s: 'j, 'j> Deref for JavaByteArrayRef<'s, 'j> {
         let data = self.0.as_ptr() as *const u8;
 
         unsafe { std::slice::from_raw_parts(data, len) }
+    }
+}
+
+// ByteBuffer support
+
+/// Rather than implementing any conversions, the ByteArrays allow present low level options to make the best decision for performance
+impl<'j> FromJavaToRust<'j, Self> for JByteBuffer<'j> {
+    fn java_to_rust(java: Self, _env: JNIEnv<'j>) -> Self {
+        java
+    }
+}
+
+/// Rather than implementing any conversions, the ByteArrays allow present low level options to make the best decision for performance
+impl<'j> FromRustToJava<'j, Self> for JByteBuffer<'j> {
+    fn rust_to_java(rust: Self, _env: JNIEnv<'j>) -> Self {
+        rust
     }
 }

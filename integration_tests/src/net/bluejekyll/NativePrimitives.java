@@ -33,6 +33,14 @@ public class NativePrimitives extends ParentClass {
     public native java.io.File unsupported(java.io.File file);
 
     public java.io.File unsupported_method(java.io.File file) {
+        // does nothing, this is a compilation check
         return file;
     }
+
+    public Unsupported unsupported_return() {
+        // does nothing, this is a compilation check
+        return new Unsupported();
+    }
+
+    public native Unsupported2 unsupported_return_native();
 }

@@ -352,7 +352,10 @@ impl<'a> Jaffi<'a> {
                 .map(JniType::from_java)
                 .collect::<Vec<_>>();
 
-            for ty in &arg_types {
+            let result = Return::from_java(&method.descriptor.result);
+
+            // Collect the Objects that need to be supported for returns and argument lists
+            for ty in arg_types.iter().chain(result.as_val().into_iter()) {
                 match ty {
                     JniType::Ty(BaseJniTy::Jobject(ObjectType::Object(obj))) => {
                         argument_objects.insert(obj.clone())
@@ -370,7 +373,6 @@ impl<'a> Jaffi<'a> {
                     rs_ty: ty.to_rs_type_name(),
                 })
                 .collect();
-            let result = Return::from_java(&method.descriptor.result);
 
             let function = Function {
                 name: method.name.to_string(),
