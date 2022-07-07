@@ -44,7 +44,7 @@ use jaffi_support::\{
 #[repr(transparent)]
 pub struct { obj.class_name -}(JClass<'j>);
 
-impl<'j> { obj.static_trait_name }<'j> for { obj.class_name } \{}
+impl<'j> { obj.static_trait_name } for { obj.class_name } \{}
 
 impl<'j> { obj.class_name -} \{
     fn java_class_desc() -> &'static str \{
@@ -76,7 +76,7 @@ impl<'j> FromRustToJava<'j, { obj.class_name }> for { obj.class_name } \{
 #[repr(transparent)]
 pub struct { obj.obj_name -}(JObject<'j>);
 
-impl<'j> { obj.static_trait_name }<'j> for { obj.obj_name } \{}
+impl<'j> { obj.static_trait_name } for { obj.obj_name } \{}
 
 impl<'j> { obj.obj_name -} \{
     /// Returns the type name in java, e.g. `Object` is `"java/lang/Object"`
@@ -97,7 +97,7 @@ impl<'j> { obj.obj_name -} \{
     {{- endfor }}
 }
 
-pub trait { obj.static_trait_name }<'j> \{
+pub trait { obj.static_trait_name } \{
     {{ for function in obj.methods }}
     {{ if function.is_static }}
     {{ call JAVA_FUNCTION_CALL with function }}
@@ -116,6 +116,12 @@ impl<'j> std::ops::Deref for { obj.obj_name -} \{
 impl<'j> From<{ obj.obj_name -}> for JObject<'j> \{
     fn from(obj: { obj.obj_name -}) -> Self \{
         obj.0
+    }
+}
+
+impl<'j> From<JObject<'j>> for { obj.obj_name } \{
+    fn from(obj: JObject<'j>) -> Self \{
+        Self(obj)
     }
 }
 
@@ -286,8 +292,8 @@ pub(crate) struct Object {
 impl From<ObjectType> for Object {
     fn from(ty: ObjectType) -> Self {
         let java_name = ty.as_descriptor();
-        let class_name = ty.to_jni_class_name();
-        let obj_name = ty.to_jni_type_name();
+        let class_name = ty.to_jni_class_name().append("<'j>");
+        let obj_name = ty.to_jni_type_name().append("<'j>");
         let static_trait_name = ty.to_rs_type_name().prepend("Static_");
 
         Object {
@@ -478,14 +484,14 @@ impl ObjectType {
             Self::JObject => "jni::objects::JObject<'j>".into(),
             Self::JString => "jni::objects::JString<'j>".into(),
             Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
-            Self::Object(ref obj) => obj.0.replace('/', "_").into(),
+            Self::Object(ref obj) => RustTypeName::from(obj.0.replace('/', "_")).append("<'j>"),
         }
     }
 
     /// Returns the typename with a lifetime
     pub(crate) fn to_jni_type_name(&self) -> RustTypeName {
         // add the lifetime
-        self.to_type_name_base().append("<'j>")
+        self.to_type_name_base()
     }
 
     /// Returns the typename plus "Class" with a lifetime
@@ -497,32 +503,24 @@ impl ObjectType {
     /// Returns the typename without a lifetime
     pub(crate) fn to_rs_type_name(&self) -> RustTypeName {
         match *self {
-            Self::JClass => "jni::objects::JClass".into(),
-            Self::JByteBuffer => "jni::objects::JByteBuffer".into(),
-            Self::JObject => "jni::objects::JObject".into(),
+            Self::JClass => "jni::objects::JClass<'j>".into(),
+            Self::JByteBuffer => "jni::objects::JByteBuffer<'j>".into(),
+            Self::JObject => "jni::objects::JObject<'j>".into(),
             Self::JString => "String".into(),
-            Self::JThrowable => "jni::objects::JThrowable".into(),
-            Self::Object(ref obj) => obj.0.replace('/', "_").into(),
+            Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
+            Self::Object(ref obj) => RustTypeName::from(obj.0.replace('/', "_")).append("<'j>"),
         }
     }
 }
 
-// impl<'a, S: AsRef<str> + 'a> From<S> for ObjectType {
-//     fn from(path_name: S) -> Self {
-//         let path_name = path_name.as_ref();
-//         match dbg!(path_name) {
-//             _ if &*path_name == "java/lang/Class" => Self::JClass,
-//             _ if &*path_name == "java/nio/ByteBuffer" => Self::JByteBuffer,
-//             _ if &*path_name == "java/lang/Object" => Self::JObject,
-//             _ if &*path_name == "java/lang/String" => Self::JString,
-//             _ if &*path_name == "java/lang/Throwable" => Self::JThrowable,
-//             path_name => Self::Object(path_name.to_string().into()),
-//         }
-//     }
-// }
-
 impl From<JavaDesc> for ObjectType {
     fn from(java_desc: JavaDesc) -> Self {
+        Self::from(&java_desc)
+    }
+}
+
+impl<'o> From<&'o JavaDesc> for ObjectType {
+    fn from(java_desc: &'o JavaDesc) -> Self {
         let path_name = java_desc.as_str();
         match path_name {
             _ if &*path_name == "java/lang/Class" => Self::JClass,

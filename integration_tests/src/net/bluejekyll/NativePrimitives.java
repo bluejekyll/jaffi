@@ -29,4 +29,10 @@ public class NativePrimitives extends ParentClass {
     }
 
     public native int call_dad_native(int arg1);
+
+    public native java.io.File unsupported(java.io.File file);
+
+    public java.io.File unsupported_method(java.io.File file) {
+        return file;
+    }
 }

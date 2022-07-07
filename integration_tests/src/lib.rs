@@ -86,6 +86,14 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         let parent = this.as_net_bluejekyll_ParentClass();
         parent.call_1dad(self.env, arg0)
     }
+
+    fn unsupported(
+        &self,
+        this: net_bluejekyll_NativePrimitives<'j>,
+        arg0: net_bluejekyll::java_io_File<'j>,
+    ) -> net_bluejekyll::java_io_File<'j> {
+        arg0
+    }
 }
 
 struct NativeStringsRsImpl<'j> {

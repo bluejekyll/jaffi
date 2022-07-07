@@ -224,63 +224,72 @@ impl<'a> Jaffi<'a> {
         let mut search_object_types = types.iter().cloned().collect::<Vec<_>>();
         let mut objects = Vec::<Object>::with_capacity(search_object_types.len());
         let mut already_generated = HashSet::<JavaDesc>::new();
+        let classes_to_wrap = self
+            .classes_to_wrap
+            .iter()
+            .chain(self.native_classes.iter())
+            .map(|s| JavaDesc::from(&**s))
+            .collect::<HashSet<_>>();
 
         let mut class_buf = Vec::<u8>::new();
-        while let Some(object) = search_object_types.pop() {
-            if already_generated.contains(&object) {
+        while let Some(object_desc) = search_object_types.pop() {
+            if already_generated.contains(&object_desc) {
                 continue;
             } else {
-                already_generated.insert(object.clone());
+                already_generated.insert(object_desc.clone());
             }
 
-            let class = self.search_classpath(&[object.clone()])?;
-            let mut object = Object::from(ObjectType::from(object));
+            let wrap_methods = classes_to_wrap.contains(&object_desc);
+            let mut object = Object::from(ObjectType::from(&object_desc));
 
-            for obj_path in class {
-                let class_file = self.read_class(&obj_path, &mut class_buf)?;
+            if wrap_methods {
+                let class = self.search_classpath(&[object_desc.clone()])?;
 
-                // collect public and non-native methods
-                let public_methods = class_file
-                    .methods
-                    .iter()
-                    .filter(|method_info| {
-                        method_info.name != "<init>"
-                            && !method_info.access_flags.contains(MethodAccessFlags::NATIVE)
-                            && method_info.access_flags.contains(MethodAccessFlags::PUBLIC)
-                    })
-                    .collect::<Vec<_>>();
+                for obj_path in class {
+                    let class_file = self.read_class(&obj_path, &mut class_buf)?;
 
-                let (functions, new_types) =
-                    self.extract_function_info(&class_file, public_methods)?;
+                    // collect public and non-native methods
+                    let public_methods = class_file
+                        .methods
+                        .iter()
+                        .filter(|method_info| {
+                            method_info.name != "<init>"
+                                && !method_info.access_flags.contains(MethodAccessFlags::NATIVE)
+                                && method_info.access_flags.contains(MethodAccessFlags::PUBLIC)
+                        })
+                        .collect::<Vec<_>>();
 
-                // add any types to generate that we haven't seen before
-                for ty in new_types {
-                    if !types.contains(&ty) {
-                        types.insert(ty.clone());
-                        search_object_types.push(ty);
+                    let (functions, new_types) =
+                        self.extract_function_info(&class_file, public_methods)?;
+
+                    // add any types to generate that we haven't seen before
+                    for ty in new_types {
+                        if !types.contains(&ty) {
+                            types.insert(ty.clone());
+                            search_object_types.push(ty);
+                        }
                     }
-                }
 
-                // find all interfaces this type supports
-                for interface in class_file
-                    .super_class
-                    .iter()
-                    .chain(class_file.interfaces.iter())
-                {
-                    // we're only going to generate types that have been explicitly been asked for,
-                    //   or those that appear in args, that's what's in the hash_map. So unlike above
-                    //   we won't add to the types hashmap
-                    let interface = JavaDesc::from(interface as &str);
-                    if types.contains(&interface) {
-                        search_object_types.push(interface.clone());
-                        object.interfaces.push(RustTypeName::from(interface));
+                    // find all interfaces this type supports
+                    for interface in class_file
+                        .super_class
+                        .iter()
+                        .chain(class_file.interfaces.iter())
+                    {
+                        // we're only going to generate types that have been explicitly been asked for,
+                        //   or those that appear in args, that's what's in the hash_map. So unlike above
+                        //   we won't add to the types hashmap
+                        let interface = JavaDesc::from(interface as &str);
+                        if types.contains(&interface) {
+                            search_object_types.push(interface.clone());
+                            object.interfaces.push(RustTypeName::from(interface));
+                        }
                     }
-                }
 
-                // add the function to the methods in the object
-                object.methods.extend(functions.into_iter());
+                    // add the function to the methods in the object
+                    object.methods.extend(functions.into_iter());
+                }
             }
-
             objects.push(object);
         }
 
