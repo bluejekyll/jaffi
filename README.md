@@ -36,7 +36,7 @@ All tests succeeded
 
 ## Getting started
 
-The Jaffi library will scan class files based on the configuration parameters specified. There are some defitioncies, currently only unzipped classpaths are supported, i.e. if there jars in the classpath the build will fail.
+The Jaffi library will scan class files based on the configuration parameters specified. There are some deficiencies, currently only unzipped classpaths are supported, i.e. if there jars in the classpath the build will fail.
 
 To use the library, this hasn't been published to Crates.io yet, you will need to add dependencies like this to your Cargo.toml:
 
@@ -120,7 +120,7 @@ I built this to help with a different project I've been working on where I was c
 This project makes heavy usage of these crates, thank you to everyone who's worked on them:
 
 - `cafebabe` - a Java class file reader
-- `jni` - state of the art JNI suport in Rust
+- `jni` - state of the art JNI support in Rust
 - `tinytemplate` - for all the Rust code generation
 
 Thank you!
