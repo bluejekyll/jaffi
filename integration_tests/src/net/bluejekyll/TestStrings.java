@@ -6,6 +6,7 @@ public class TestStrings {
         TestStrings.testEatString();
         TestStrings.testTieOffString();
         TestStrings.testReturnStringFromJava();
+        TestStrings.testConstructor();
         System.out.println("<<<< " + TestStrings.class.getName() + " tests succeeded");
     }
 
@@ -28,6 +29,16 @@ public class TestStrings {
         String expected = NativeStrings.retString + " and ☕️";
         NativeStrings strings = new NativeStrings();
         String got = strings.returnStringNative(" and ☕️");
+
+        if (!expected.equals(got)) {
+            throw new RuntimeException("expected " + expected + " got " + got);
+        }
+    }
+
+    static void testConstructor() {
+        String expected = NativeStrings.retString + " and ☕️";
+        NativeStrings strings = NativeStrings.ctor(expected);
+        String got = strings.returnStringNative("");
 
         if (!expected.equals(got)) {
             throw new RuntimeException("expected " + expected + " got " + got);

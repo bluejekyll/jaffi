@@ -112,6 +112,17 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
         Self { env }
     }
 
+    fn ctor(
+        &self,
+        class: net_bluejekyll_NativeStringsClass<'j>,
+        arg0: String,
+    ) -> net_bluejekyll_NativeStrings<'j> {
+        println!("ctor: {arg0}");
+        net_bluejekyll_NativeStrings::new_1net_bluejekyll_NativeStrings__Ljava_lang_String_2(
+            self.env, arg0,
+        )
+    }
+
     fn eatString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) {
         println!("eatString ate: {arg0}");
     }

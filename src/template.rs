@@ -10,8 +10,6 @@ use std::{borrow::Cow, fmt};
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
 use enum_as_inner::EnumAsInner;
 use jaffi_support::{
-    arrays::{JavaByteArray, UnsupportedArray},
-    jni::sys,
     JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
 };
 use serde::Serialize;
@@ -72,6 +70,10 @@ impl<'j> FromRustToJava<'j, { obj.class_name }> for { obj.class_name } \{
         rust
     }
 }
+
+{# ** ====================================================== ** #}
+{# ** The object definition                                  ** #}
+{# ** ====================================================== ** #}
 
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
@@ -139,7 +141,9 @@ impl<'j> FromRustToJava<'j, { obj.obj_name }> for { obj.obj_name } \{
 }
 {{ endfor }}
 
+{# ** ====================================================== ** #}
 {# ** The Support Types, Java Object and Class wrappers, etc ** #}
+{# ** ====================================================== ** #}
 
 {{ for class in class_ffis}}
 // This is the trait developers must implement
@@ -199,12 +203,12 @@ static JAVA_FUNCTION_CALL_TEMPLATE: &str = r#"
     /// 
     /// * `env` - this should be the same JNIEnv "owning" this object
     {{ if not is_static }}pub{{ endif }} fn { fn_ffi_name }(
-        &self,
+        {{ if not is_constructor }}&self,{{ endif }}
         env: JNIEnv<'j>,
         {{- for arg in arguments }}
         { arg.name }: { arg.rs_ty },
         {{- endfor }}  
-    ) -> { rs_result -} \{
+    ) -> { rs_result } \{
         let args: &[JValue<'j>] = &[
             {{- for arg in arguments }}
             <{arg.rs_ty} as IntoJavaValue<'j, {arg.ty}>>::into_java_value({arg.name}, env),
@@ -212,6 +216,16 @@ static JAVA_FUNCTION_CALL_TEMPLATE: &str = r#"
         ];
  
         let rust_value = 
+        {{- if is_constructor -}}
+        \{
+            let jobject = env.new_object(
+                "{ object_java_desc }",
+                "{ signature }",
+                args
+            ).expect("error calling Java constructor");
+            <{ rs_result } as From<JObject>>::from(jobject)
+        };
+        {{- else -}}
         {{- if is_static -}}
         match env.call_static_method(
             "{ object_java_desc }",
@@ -230,6 +244,7 @@ static JAVA_FUNCTION_CALL_TEMPLATE: &str = r#"
             Ok(jvalue) => <{ rs_result } as FromJavaValue<{ result }>>::from_jvalue(env, jvalue),
             Err(e) => panic!("error calling java, \{}", e),
         };
+        {{ endif }}
 
         rust_value
     }
@@ -268,6 +283,7 @@ pub(crate) struct Function {
     pub(crate) fn_ffi_name: FuncAbi,
     pub(crate) signature: JavaDesc,
     pub(crate) is_static: bool,
+    pub(crate) is_constructor: bool,
     pub(crate) arguments: Vec<Arg>,
     pub(crate) result: RustTypeName,
     pub(crate) rs_result: RustTypeName,
@@ -308,7 +324,7 @@ impl From<ObjectType> for Object {
     }
 }
 
-#[derive(EnumAsInner)]
+#[derive(Debug, EnumAsInner)]
 pub(crate) enum Return {
     Void,
     Val(JniType),
@@ -448,7 +464,7 @@ impl JavaArray {
 
         match self.ty {
             BaseJniTy::Jbyte => "jaffi_support::arrays::JavaByteArray<'j>".into(),
-            _ => std::any::type_name::<UnsupportedArray<'_>>().into(),
+            _ => "jaffi_support::arrays::UnsupportedArray<'j>".into(),
         }
     }
 

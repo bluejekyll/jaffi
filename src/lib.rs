@@ -253,8 +253,7 @@ impl<'a> Jaffi<'a> {
                         .methods
                         .iter()
                         .filter(|method_info| {
-                            method_info.name != "<init>"
-                                && !method_info.access_flags.contains(MethodAccessFlags::NATIVE)
+                            !method_info.access_flags.contains(MethodAccessFlags::NATIVE)
                                 && method_info.access_flags.contains(MethodAccessFlags::PUBLIC)
                         })
                         .collect::<Vec<_>>();
@@ -310,7 +309,14 @@ impl<'a> Jaffi<'a> {
         );
 
         let method_names = methods.iter().fold(HashMap::new(), |mut map, method| {
-            *map.entry(&method.name).or_insert(0) += 1;
+            // TODO: figure out how to dedup this code...
+            let method_name = if method.name == "<init>" {
+                Cow::from(format!("new_{}", class_file.this_class))
+            } else {
+                method.name.clone()
+            };
+
+            *map.entry(method_name).or_insert(0) += 1;
             map
         });
 
@@ -327,23 +333,12 @@ impl<'a> Jaffi<'a> {
         for method in methods {
             let descriptor = JavaDesc::from(method.descriptor.to_string());
 
+            let is_constructor = method.name == "<init>";
             let is_static = method.access_flags.contains(MethodAccessFlags::STATIC);
 
             let object_java_desc = this_class_desc.clone();
             let class_ffi_name = this_class.to_jni_class_name();
             let object_ffi_name = this_class.to_jni_type_name();
-            let fn_ffi_name = if *method_names
-                .get(&method.name)
-                .expect("should have been added above")
-                > 1
-            {
-                // need to long abi name
-                FuncAbi::from(JniAbi::from(&method.name)).with_descriptor(&descriptor)
-            } else {
-                // short is ok (faster lookup in dynamic linking)
-                FuncAbi::from(JniAbi::from(&method.name))
-            };
-            let fn_export_ffi_name = fn_ffi_name.with_class(&this_class.to_jni_type_name());
 
             let arg_types = method
                 .descriptor
@@ -352,7 +347,13 @@ impl<'a> Jaffi<'a> {
                 .map(JniType::from_java)
                 .collect::<Vec<_>>();
 
-            let result = Return::from_java(&method.descriptor.result);
+            let result = if !is_constructor {
+                Return::from_java(&method.descriptor.result)
+            } else {
+                Return::Val(JniType::Ty(BaseJniTy::Jobject(ObjectType::from(
+                    object_java_desc.clone(),
+                ))))
+            };
 
             // Collect the Objects that need to be supported for returns and argument lists
             for ty in arg_types.iter().chain(result.as_val().into_iter()) {
@@ -374,6 +375,24 @@ impl<'a> Jaffi<'a> {
                 })
                 .collect();
 
+            let method_name = if is_constructor {
+                Cow::from(format!("new_{}", class_file.this_class))
+            } else {
+                method.name.clone()
+            };
+            let fn_ffi_name = if *method_names
+                .get(&method_name)
+                .expect("should have been added above")
+                > 1
+            {
+                // need to long abi name
+                FuncAbi::from(JniAbi::from(method_name)).with_descriptor(&descriptor)
+            } else {
+                // short is ok (faster lookup in dynamic linking)
+                FuncAbi::from(JniAbi::from(method_name))
+            };
+            let fn_export_ffi_name = fn_ffi_name.with_class(&this_class.to_jni_type_name());
+
             let function = Function {
                 name: method.name.to_string(),
                 object_java_desc,
@@ -382,6 +401,7 @@ impl<'a> Jaffi<'a> {
                 object_ffi_name,
                 fn_ffi_name,
                 signature: descriptor,
+                is_constructor,
                 is_static,
                 arguments,
                 result: result.to_jni_type_name(),
