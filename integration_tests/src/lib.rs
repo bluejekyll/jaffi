@@ -1,10 +1,10 @@
 use jaffi_support::jni::JNIEnv;
-use net_bluejekyll::net_bluejekyll_NativeStrings;
+use net_bluejekyll::NetBluejekyllNativeStrings;
 
 use crate::net_bluejekyll::*;
 
 mod net_bluejekyll {
-    #![allow(non_camel_case_types, dead_code, non_snake_case)]
+    #![allow(dead_code)]
 
     include!(concat!(env!("OUT_DIR"), "/generated_jaffi.rs"));
 }
@@ -118,21 +118,21 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
         arg0: String,
     ) -> net_bluejekyll_NativeStrings<'j> {
         println!("ctor: {arg0}");
-        net_bluejekyll_NativeStrings::new_1net_bluejekyll_NativeStrings__Ljava_lang_String_2(
+        NetBluejekyllNativeStrings::new_1net_bluejekyll_NativeStrings__Ljava_lang_String_2(
             self.env, arg0,
         )
     }
 
-    fn eatString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) {
+    fn eatString(&self, _this: NetBluejekyllNativeStrings<'j>, arg0: String) {
         println!("eatString ate: {arg0}");
     }
 
-    fn tieOffString(&self, _this: net_bluejekyll_NativeStrings<'j>, arg0: String) -> String {
+    fn tieOffString(&self, _this: NetBluejekyllNativeStrings<'j>, arg0: String) -> String {
         println!("tieOffString got: {arg0}");
         arg0
     }
 
-    fn returnStringNative(&self, this: net_bluejekyll_NativeStrings<'j>, append: String) -> String {
+    fn returnStringNative(&self, this: NetBluejekyllNativeStrings<'j>, append: String) -> String {
         let ret = this.returnString(self.env, append);
         println!("returnStringNative got: {ret}");
 
@@ -190,7 +190,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
 
     fn newJavaBytesNative(
         &self,
-        this: net_bluejekyll::net_bluejekyll_NativeArrays<'j>,
+        this: net_bluejekyll::NetBluejekyllNativeArrays<'j>,
     ) -> jaffi_support::arrays::JavaByteArray<'j> {
         let bytes = this.newJavaBytes(self.env);
 
