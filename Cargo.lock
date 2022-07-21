@@ -69,6 +69,7 @@ version = "0.1.0"
 dependencies = [
  "cafebabe",
  "enum-as-inner",
+ "heck",
  "jaffi_support",
  "proc-macro2",
  "quote",

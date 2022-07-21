@@ -62,6 +62,13 @@ fn compile_java() {
     let class_path = class_path().display().to_string();
     std::fs::create_dir_all(&class_path).expect("failed to create dir");
 
+    let output = Command::new("javac")
+        .arg("-version")
+        .output()
+        .expect("failed to execute process");
+    std::io::stderr().write_all(&output.stdout).unwrap();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+
     let mut cmd = Command::new("javac");
     cmd.arg("-d")
         .arg(&class_path)
