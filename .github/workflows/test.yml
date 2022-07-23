@@ -35,8 +35,8 @@ jobs:
     
     - uses: actions/setup-java@v3
       with:
-      distribution: 'temurin' # See 'Supported distributions' for available options
-      java-version: '17'
+        distribution: 'temurin' # See 'Supported distributions' for available options
+        java-version: '17'
     
     - name: just test
       uses: m3y/rust-just-action@v1
