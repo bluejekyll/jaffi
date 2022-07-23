@@ -14,11 +14,11 @@ use jaffi_support::{
 };
 use proc_macro2::{TokenStream, Ident};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
-use heck::{ToUpperCamelCase, AsUpperCamelCase, ToSnakeCase};
+use heck::{ToUpperCamelCase, ToSnakeCase};
 
 fn generate_function(func: &Function) -> TokenStream {
     let java_doc = format!("A wrapper for the java function {}", func.name);
-    let fn_ffi_name = &func.fn_ffi_name;
+    let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
     let add_pub = if !func.is_static {
         quote! {pub}
     } else {
@@ -235,12 +235,13 @@ fn generate_struct(obj: &Object) -> TokenStream {
 fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
     let trait_impl = format_ident!("{}", class_ffi.trait_impl);
     let trait_name = format_ident!("{}", class_ffi.trait_name);
+    let doc_str = format!("Implement this to support with `super::{trait_impl}` to support native methods from `{}`", class_ffi.class_name);
 
     let trait_functions = class_ffi
         .functions
         .iter()
         .map(|func| {
-            let fn_ffi_name = format_ident!("{}", func.fn_ffi_name.0 .0);
+            let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
             let class_ffi_name = &func.class_ffi_name;
             let object_ffi_name = &func.object_ffi_name;
             let class_or_this = if func.is_static {
@@ -297,7 +298,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                     }
                 })
                 .collect::<Vec<_>>();
-            let fn_ffi_name = format_ident!("{}", func.fn_ffi_name.0 .0);
+            let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
             let call_class_or_this = if func.is_static {
                 format_ident!("class")
             } else {
@@ -337,6 +338,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
         // This is the trait developers must implement
         use super::#trait_impl;
 
+        #[doc = #doc_str]
         pub trait #trait_name<'j> {
             /// Costruct this type from the Java object
             ///
@@ -382,7 +384,6 @@ pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFf
 
 pub(crate) struct ClassFfi {
     pub(crate) class_name: String,
-    pub(crate) type_name: RustTypeName,
     pub(crate) trait_name: String,
     pub(crate) trait_impl: String,
     pub(crate) functions: Vec<Function>,
@@ -423,7 +424,7 @@ impl From<ObjectType> for Object {
         let java_name = ty.as_descriptor();
         let class_name = ty.to_jni_class_name().append("<'j>");
         let obj_name = ty.to_jni_type_name().append("<'j>");
-        let static_trait_name = ty.to_rs_type_name().prepend("Static_");
+        let static_trait_name = ty.to_rs_type_name().prepend("Static");
 
         Object {
             java_name,
@@ -699,6 +700,10 @@ impl FuncAbi {
         let abi_descriptor = JniAbi::from(descriptor);
 
         Self(JniAbi(format!("{self}__{abi_descriptor}")))
+    }
+
+    fn for_rust_ident(&self) -> Ident {
+        format_ident!("{}", self.0.0.to_snake_case())
     }
 }
 

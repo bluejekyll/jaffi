@@ -25,16 +25,11 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         println!("void_1void: do nothing");
     }
 
-    fn void_1long__J(&self, _this: NetBluejekyllNativePrimitivesClass<'j>, arg0: i64) -> () {
+    fn void_1long_j(&self, _this: NetBluejekyllNativePrimitivesClass<'j>, arg0: i64) -> () {
         println!("void_1long__J: got {arg0}");
     }
 
-    fn void_1long__JI(
-        &self,
-        _this: NetBluejekyllNativePrimitives<'j>,
-        arg0: i64,
-        arg1: i32,
-    ) -> i64 {
+    fn void_1long_ji(&self, _this: NetBluejekyllNativePrimitives<'j>, arg0: i64, arg1: i32) -> i64 {
         let ret = arg0 + arg1 as i64;
         println!("void_1long__JI: {arg0} + {arg1} = {ret}");
         ret
@@ -118,22 +113,22 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
         arg0: String,
     ) -> NetBluejekyllNativeStrings<'j> {
         println!("ctor: {arg0}");
-        NetBluejekyllNativeStrings::new_1net_bluejekyll_NativeStrings__Ljava_lang_String_2(
+        NetBluejekyllNativeStrings::new_1net_bluejekyll_native_strings_ljava_lang_string_2(
             self.env, arg0,
         )
     }
 
-    fn eatString(&self, _this: NetBluejekyllNativeStrings<'j>, arg0: String) {
+    fn eat_string(&self, _this: NetBluejekyllNativeStrings<'j>, arg0: String) {
         println!("eatString ate: {arg0}");
     }
 
-    fn tieOffString(&self, _this: NetBluejekyllNativeStrings<'j>, arg0: String) -> String {
+    fn tie_off_string(&self, _this: NetBluejekyllNativeStrings<'j>, arg0: String) -> String {
         println!("tieOffString got: {arg0}");
         arg0
     }
 
-    fn returnStringNative(&self, this: NetBluejekyllNativeStrings<'j>, append: String) -> String {
-        let ret = this.returnString(self.env, append);
+    fn return_string_native(&self, this: NetBluejekyllNativeStrings<'j>, append: String) -> String {
+        let ret = this.return_string(self.env, append);
         println!("returnStringNative got: {ret}");
 
         ret
@@ -149,7 +144,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
         Self { env }
     }
 
-    fn sendBytes(
+    fn send_bytes(
         &self,
         _this: net_bluejekyll::NetBluejekyllNativeArraysClass<'j>,
         arg0: jaffi_support::arrays::JavaByteArray<'_>,
@@ -159,7 +154,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
         println!("sendBytes: {:x?}", &slice[..]);
     }
 
-    fn getBytes(
+    fn get_bytes(
         &self,
         _this: net_bluejekyll::NetBluejekyllNativeArraysClass<'j>,
         arg0: jaffi_support::arrays::JavaByteArray<'j>,
@@ -171,7 +166,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
         arg0
     }
 
-    fn newBytes(
+    fn new_bytes(
         &self,
         _this: net_bluejekyll::NetBluejekyllNativeArraysClass<'j>,
     ) -> jaffi_support::arrays::JavaByteArray<'j> {
@@ -188,11 +183,11 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
         jarray
     }
 
-    fn newJavaBytesNative(
+    fn new_java_bytes_native(
         &self,
         this: net_bluejekyll::NetBluejekyllNativeArrays<'j>,
     ) -> jaffi_support::arrays::JavaByteArray<'j> {
-        let bytes = this.newJavaBytes(self.env);
+        let bytes = this.new_java_bytes(self.env);
 
         println!(
             "newJavaBytesNative: {:x?}",
