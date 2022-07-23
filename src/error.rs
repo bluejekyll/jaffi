@@ -30,10 +30,6 @@ pub enum ErrorKind {
     #[error("{0}")]
     Io(#[from] std::io::Error),
 
-    /// An error occurred in the templating engine
-    #[error("{0}")]
-    Template(#[from] tinytemplate::error::Error),
-
     /// An error occurred with the cafebabe library
     #[error("{0}")]
     Cafebabe(#[from] cafebabe::ParseError),

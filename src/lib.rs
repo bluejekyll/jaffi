@@ -62,8 +62,6 @@ pub struct Jaffi<'a> {
 impl<'a> Jaffi<'a> {
     /// Generate the rust FFI files based on the configured inputs
     pub fn generate(&self) -> Result<(), Error> {
-        let template = template::new_engine()?;
-
         // shared buffer for classes that are read into memory
         let mut class_ffis = Vec::<ClassFfi>::new();
         let mut argument_types = HashSet::<JavaDesc>::new();
