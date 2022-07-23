@@ -14,6 +14,7 @@ use jaffi_support::{
 };
 use proc_macro2::{TokenStream, Ident};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
+use heck::{ToUpperCamelCase, AsUpperCamelCase, ToSnakeCase};
 
 fn generate_function(func: &Function) -> TokenStream {
     let java_doc = format!("A wrapper for the java function {}", func.name);
@@ -119,7 +120,7 @@ fn generate_struct(obj: &Object) -> TokenStream {
         .iter()
         .map(|interface| {
             let interface = interface.no_lifetime();
-            let as_interface = format_ident!("as_{interface}");
+            let as_interface = format_ident!("as_{}", interface.to_string().to_snake_case());
 
             quote! {
                 pub fn #as_interface(&self) -> #interface {
@@ -584,7 +585,7 @@ impl JavaArray {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, EnumAsInner)]
 pub(crate) enum ObjectType {
     JClass,
     JByteBuffer,
@@ -613,13 +614,12 @@ impl ObjectType {
             Self::JObject => "jni::objects::JObject<'j>".into(),
             Self::JString => "jni::objects::JString<'j>".into(),
             Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
-            Self::Object(ref obj) => RustTypeName::from(obj.0.replace('/', "_")).append("<'j>"),
+            Self::Object(ref obj) => RustTypeName::from(obj.escape_for_extern_fn().to_upper_camel_case()).append("<'j>"),
         }
     }
 
     /// Returns the typename with a lifetime
     pub(crate) fn to_jni_type_name(&self) -> RustTypeName {
-        // add the lifetime
         self.to_type_name_base()
     }
 
@@ -637,7 +637,7 @@ impl ObjectType {
             Self::JObject => "jni::objects::JObject<'j>".into(),
             Self::JString => "String".into(),
             Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
-            Self::Object(ref obj) => RustTypeName::from(obj.0.replace('/', "_")).append("<'j>"),
+            Self::Object(ref obj) => RustTypeName::from(obj.0.replace('/', "_").to_upper_camel_case()).append("<'j>"),
         }
     }
 }
@@ -679,13 +679,11 @@ pub(crate) struct ClassAndFuncAbi(JniAbi);
 pub(crate) struct JniAbi(String);
 
 impl FuncAbi {
-    pub(crate) fn with_class(&self, class: &RustTypeName) -> ClassAndFuncAbi {
-        let ffi_name = class
-            .clone()
-            .prepend("Java_")
-            .append("_")
-            .append(&self.0 .0)
-            .to_string();
+    pub(crate) fn with_class(&self, class: &JavaDesc) -> ClassAndFuncAbi {
+        let mut ffi_name = "Java_".to_string();
+        ffi_name.push_str(&class.escape_for_extern_fn());
+        ffi_name.push_str("_");
+        ffi_name.push_str(&self.0 .0);
         ClassAndFuncAbi(JniAbi(ffi_name))
     }
 
@@ -820,6 +818,10 @@ pub(crate) struct JavaDesc(String);
 impl JavaDesc {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub(crate) fn escape_for_extern_fn(&self) -> String {
+        self.0.replace('/', "_")
     }
 }
 

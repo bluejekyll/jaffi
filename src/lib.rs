@@ -24,6 +24,7 @@ mod error;
 mod template;
 
 pub use error::{Error, ErrorKind};
+use heck::{AsUpperCamelCase, ToUpperCamelCase};
 use quote::format_ident;
 use template::{
     Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustTypeName,
@@ -276,7 +277,9 @@ impl<'a> Jaffi<'a> {
                         let interface = JavaDesc::from(interface as &str);
                         if types.contains(&interface) {
                             search_object_types.push(interface.clone());
-                            object.interfaces.push(RustTypeName::from(interface));
+                            object
+                                .interfaces
+                                .push(RustTypeName::from(interface.as_str().to_upper_camel_case()));
                         }
                     }
 
@@ -386,7 +389,11 @@ impl<'a> Jaffi<'a> {
                 // short is ok (faster lookup in dynamic linking)
                 FuncAbi::from(JniAbi::from(method_name))
             };
-            let fn_export_ffi_name = fn_ffi_name.with_class(&this_class.to_jni_type_name());
+            let fn_export_ffi_name = fn_ffi_name.with_class(
+                this_class
+                    .as_object()
+                    .expect("this should have been a custom object"),
+            );
 
             let function = Function {
                 name: method.name.to_string(),
@@ -431,7 +438,7 @@ mod tests {
         assert_eq!(
             FuncAbi::from(JniAbi::from("f"))
                 .with_descriptor(&JavaDesc::from("(ILjava.lang.String;)D"))
-                .with_class(&RustTypeName::from("p.q.r.A"))
+                .with_class(&JavaDesc::from("p.q.r.A"))
                 .to_string(),
             "Java_p_q_r_A_f__ILjava_lang_String_2"
         );
