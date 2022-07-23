@@ -38,8 +38,7 @@ jobs:
         distribution: 'temurin' # See 'Supported distributions' for available options
         java-version: '17'
     
+    - uses: extractions/setup-just@v1
+
     - name: just test
-      uses: m3y/rust-just-action@v1
-      with:
-        command: test
-        file: ./Justfile
+      run: just test
