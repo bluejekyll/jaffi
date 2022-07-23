@@ -272,7 +272,8 @@ fn generate_function(func: &Function) -> TokenStream {
         quote!{&self,}
     } else {
         quote!{}
-    };    let arguments = func.arguments.iter().map(|arg| 
+    };    
+    let arguments = func.arguments.iter().map(|arg| 
         (&arg.name, &arg.rs_ty)
     ).map(|(name, rs_ty)| quote!{ #name: #rs_ty }).collect::<Vec<_>>();
     let rs_result = &func.rs_result;
@@ -351,30 +352,18 @@ fn generate_struct(obj: &Object) -> TokenStream {
     let static_trait_name = &obj.static_trait_name;
     let java_name = format!("\"{}\"", obj.java_name.as_str());
 
-    let mut interfaces = TokenStream::new();
-    for interface in &obj.interfaces {
+    let interfaces = obj.interfaces.iter().map(|interface| {
         let as_interface = format_ident!("as_{interface}");
 
-        let interface_tokens = quote! {
+        quote! {
             pub fn #as_interface(&self) -> #interface<'j> {
                 #interface(self.0)
             }
-        };
+        }
+    }).collect::<TokenStream>();
 
-        interfaces.extend(interface_tokens);
-    }
-
-    let mut methods = TokenStream::new();
-    for function in obj.methods.iter().filter(|f| !f.is_static) {
-        let function_tokens = generate_function(function);
-        methods.extend(function_tokens);
-    }
-
-    let mut static_methods = TokenStream::new();
-    for function in obj.methods.iter().filter(|f| f.is_static) {
-        let function_tokens = generate_function(function);
-        static_methods.extend(function_tokens);
-    }
+    let methods = obj.methods.iter().filter(|f| !f.is_static).map(|f| generate_function(f)).collect::<TokenStream>();
+    let static_methods = obj.methods.iter().filter(|f| f.is_static).map(|f| generate_function(f)).collect::<TokenStream>();
 
     quote! {
         #[derive(Clone, Copy, Debug)]
@@ -465,7 +454,106 @@ fn generate_struct(obj: &Object) -> TokenStream {
     }
 }
 
-pub(crate) fn generate_java_ffi(objects: Vec<Object>) -> TokenStream {
+fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
+    let trait_impl = &class_ffi.trait_impl;
+    let trait_name = &class_ffi.trait_name;
+
+    let trait_functions = class_ffi.functions.iter().map(|func| {
+        let fn_ffi_name = format_ident!("{}", func.fn_ffi_name.0.0);
+        let class_ffi_name = &func.class_ffi_name;
+        let object_ffi_name = &func.object_ffi_name;
+        let class_or_this = if func.is_static {
+            quote!{ class: #class_ffi_name  }
+        } else {
+            quote!{ this: #object_ffi_name  }
+        };
+        let arguments = func.arguments.iter().map(|arg| 
+            (&arg.name, &arg.rs_ty)
+        ).map(|(name, rs_ty)| quote!{ #name: #rs_ty }).collect::<Vec<_>>();
+        let rs_result = &func.rs_result;
+
+        quote! {
+            fn { function.fn_ffi_name }(
+                &self,
+                #class_or_this,
+                #(#arguments),*   
+            ) -> #rs_result;
+        }
+    }).collect::<TokenStream>();
+
+    let extern_functions = class_ffi.functions.iter().map(|func| {
+        let signature = &func.signature.0;
+        let fn_doc = format!("JNI method signature {signature}");
+        let fn_export_ffi_name = format_ident!("{}", func.fn_export_ffi_name.0.0);
+        let class_ffi_name = &func.class_ffi_name;
+        let object_ffi_name = &func.object_ffi_name;
+        let class_or_this = if func.is_static {
+            quote!{ class: #class_ffi_name  }
+        } else {
+            quote!{ this: #object_ffi_name  }
+        };
+        let arguments = func.arguments.iter().map(|arg| 
+            (&arg.name, &arg.ty)
+        ).map(|(name, ty)| quote!{ #name: #ty }).collect::<Vec<_>>();
+        let result = &func.result;
+        let args_to_rust = func.arguments.iter().map(|arg| 
+            (&arg.name, &arg.rs_ty)
+        ).map(|(name, rs_ty)| quote!{ 
+            let #name = <#rs_ty>::java_to_rust(#name, env); 
+        }).collect::<Vec<_>>();
+        let fn_ffi_name = format_ident!("{}", func.fn_export_ffi_name.0.0);
+        let args_for_call = func.arguments.iter().map(|arg| 
+            (&arg.name, &arg.rs_ty)
+        ).map(|(name, rs_ty)| quote!{ 
+            let #name = <#rs_ty>::java_to_rust(#name, env); 
+        }).collect::<Vec<_>>();
+        let call_class_or_this = if func.is_static {
+            format_ident!("class")
+        } else {
+            format_ident!("this")
+        };
+        let args_call = func.arguments.iter().map(|arg| &arg.name).map(|name| quote!{#name}).collect::<Vec<_>>();
+
+        quote!{
+            #[doc(#fn_doc)]
+            #[no_mangle]
+            pub extern "system" fn fn_export_ffi_name<'j>(
+                env: JNIEnv<'j>,
+                #class_or_this,
+                #(#arguments),*
+            ) -> #result {
+                let myself = #trait_impl::from_env(env);
+    
+                #(#args_to_rust)*
+    
+                let result = myself.#fn_ffi_name (
+                    #call_class_or_this,
+                    #(#args_call),*
+                );
+
+                <#result>::rust_to_java(result, env)
+            }
+        }
+    }).collect::<TokenStream>();
+
+    quote!{
+        // This is the trait developers must implement
+        use super::#trait_impl;
+
+        pub trait #trait_name<'j> {
+            /// Costruct this type from the Java object
+            /// 
+            /// Implementations should consider storing both values as types on the implementation object
+            fn from_env(env: JNIEnv<'j>) -> Self;
+
+            #trait_functions
+        }
+
+        #extern_functions
+    }
+}
+
+pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFfi>) -> TokenStream {
     let header = quote! {
         use jaffi_support::{
             FromJavaToRust,
@@ -481,11 +569,14 @@ pub(crate) fn generate_java_ffi(objects: Vec<Object>) -> TokenStream {
     };
 
     let objects = objects.iter().map(generate_struct).collect::<TokenStream>();
+    let class_ffis = other_classes.iter().map(generate_class_ffi).collect::<TokenStream>();
 
     quote! {
         #header
 
         #objects
+
+        #class_ffis
     }
 }
 
