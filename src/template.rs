@@ -5,92 +5,100 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{borrow::Cow, fmt};
+use std::fmt;
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
 use enum_as_inner::EnumAsInner;
 use jaffi_support::{
     JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
 };
-use proc_macro2::{TokenStream};
+use proc_macro2::{TokenStream, Ident};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
-use serde::Serialize;
 
 fn generate_function(func: &Function) -> TokenStream {
     let java_doc = format!("A wrapper for the java function {}", func.name);
     let fn_ffi_name = &func.fn_ffi_name;
     let add_pub = if !func.is_static {
-        quote!{pub}
+        quote! {pub}
     } else {
-        quote!{}
+        quote! {}
     };
     let amp_self = if !func.is_constructor {
-        quote!{&self,}
+        quote! {&self,}
     } else {
-        quote!{}
-    };    
-    let arguments = func.arguments.iter().map(|arg| 
-        (&arg.name, &arg.rs_ty)
-    ).map(|(name, rs_ty)| quote!{ #name: #rs_ty }).collect::<Vec<_>>();
+        quote! {}
+    };
+    let arguments = func
+        .arguments
+        .iter()
+        .map(|arg| (&arg.name, &arg.rs_ty))
+        .map(|(name, rs_ty)| quote! { #name: #rs_ty })
+        .collect::<Vec<_>>();
     let rs_result = &func.rs_result;
     let result = &func.result;
-    let to_jvalue_args= func.arguments.iter().map(|arg| 
-        (&arg.name, &arg.rs_ty, &arg.ty)
-    ).map(|(name, rs_ty, ty)| 
-        quote!{ <#rs_ty as IntoJavaValue<'j, #ty>>::into_java_value(#name, env), }
-    ).collect::<Vec<_>>();
-    let object_java_desc = format!("\"{}\"", func.object_java_desc.0);
-    let signature = format!("\"{}\"", func.signature.0);
+    let to_jvalue_args= func
+        .arguments
+        .iter()
+        .map(|arg| (&arg.name, &arg.rs_ty, &arg.ty))
+        .map(|(name, rs_ty, ty)| 
+            quote!{ <#rs_ty as IntoJavaValue<'j, #ty>>::into_java_value(#name, env) }
+        )
+        .collect::<Vec<_>>();
+    let object_java_desc = &func.object_java_desc.0;
+    let signature = &func.signature.0;
     let name = &func.name;
-    let from_java_value = quote!{ <#rs_result as FromJavaValue<#result>>::from_jvalue(env, jvalue) };
+    let from_java_value =
+        quote! { <#rs_result as FromJavaValue<#result>>::from_jvalue(env, jvalue) };
     let method_call = if func.is_constructor {
-        quote!{
+        quote! {
             let jobject = env.new_object(
                 #object_java_desc,
                 #signature,
                 args
             ).expect("error calling Java constructor");
-            <{ rs_result } as From<JObject>>::from(jobject)
+            <#rs_result  as From<JObject>>::from(jobject)
         }
     } else if func.is_static {
-        quote!{
+        quote! {
             match env.call_static_method(
                 #object_java_desc,
                 #name,
                 #signature,
                 args
             ) {
-                #from_java_value
-            };
+                Ok(jvalue) => #from_java_value,
+                Err(e) => panic!("error call_static_method, {}", e),
+            }
         }
     } else {
-        quote!{
+        quote! {
             match env.call_method(
                 self.0,
                 #name,
                 #signature,
                 args
             ) {
-                #from_java_value
-            };
+                Ok(jvalue) => #from_java_value,
+                Err(e) => panic!("error call_method, {}", e),
+            }
         }
     };
 
     quote! {
         #[doc = #java_doc]
-        /// 
+        ///
         /// # Arguments
-        /// 
+        ///
         /// * `env` - this should be the same JNIEnv "owning" this object
         #add_pub fn #fn_ffi_name(
             #amp_self
             env: JNIEnv<'j>,
-            #(#arguments),*  
+            #(#arguments),*
         ) -> #rs_result {
             let args: &[JValue<'j>] = &[
-                #(#to_jvalue_args),* 
+                #(#to_jvalue_args),*
             ];
- 
+
             let rust_value = {
                 #method_call
             };
@@ -104,25 +112,40 @@ fn generate_struct(obj: &Object) -> TokenStream {
     let class_name = &obj.class_name;
     let obj_name = &obj.obj_name;
     let static_trait_name = &obj.static_trait_name;
-    let java_name = format!("\"{}\"", obj.java_name.as_str());
+    let java_name = obj.java_name.as_str();
 
-    let interfaces = obj.interfaces.iter().map(|interface| {
-        let as_interface = format_ident!("as_{interface}");
+    let interfaces = obj
+        .interfaces
+        .iter()
+        .map(|interface| {
+            let interface = interface.no_lifetime();
+            let as_interface = format_ident!("as_{interface}");
 
-        quote! {
-            pub fn #as_interface(&self) -> #interface<'j> {
-                #interface(self.0)
+            quote! {
+                pub fn #as_interface(&self) -> #interface {
+                    #interface(self.0)
+                }
             }
-        }
-    }).collect::<TokenStream>();
+        })
+        .collect::<TokenStream>();
 
-    let methods = obj.methods.iter().filter(|f| !f.is_static).map(|f| generate_function(f)).collect::<TokenStream>();
-    let static_methods = obj.methods.iter().filter(|f| f.is_static).map(|f| generate_function(f)).collect::<TokenStream>();
+    let methods = obj
+        .methods
+        .iter()
+        .filter(|f| !f.is_static)
+        .map(|f| generate_function(f))
+        .collect::<TokenStream>();
+    let static_methods = obj
+        .methods
+        .iter()
+        .filter(|f| f.is_static)
+        .map(|f| generate_function(f))
+        .collect::<TokenStream>();
 
     quote! {
         #[derive(Clone, Copy, Debug)]
         #[repr(transparent)]
-        pub struct { #class_name -}(JClass<'j>);
+        pub struct #class_name (JClass<'j>);
 
         impl<'j> #static_trait_name for #class_name {}
 
@@ -209,94 +232,113 @@ fn generate_struct(obj: &Object) -> TokenStream {
 }
 
 fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
-    let trait_impl = &class_ffi.trait_impl;
-    let trait_name = &class_ffi.trait_name;
+    let trait_impl = format_ident!("{}", class_ffi.trait_impl);
+    let trait_name = format_ident!("{}", class_ffi.trait_name);
 
-    let trait_functions = class_ffi.functions.iter().map(|func| {
-        let fn_ffi_name = format_ident!("{}", func.fn_ffi_name.0.0);
-        let class_ffi_name = &func.class_ffi_name;
-        let object_ffi_name = &func.object_ffi_name;
-        let class_or_this = if func.is_static {
-            quote!{ class: #class_ffi_name  }
-        } else {
-            quote!{ this: #object_ffi_name  }
-        };
-        let arguments = func.arguments.iter().map(|arg| 
-            (&arg.name, &arg.rs_ty)
-        ).map(|(name, rs_ty)| quote!{ #name: #rs_ty }).collect::<Vec<_>>();
-        let rs_result = &func.rs_result;
+    let trait_functions = class_ffi
+        .functions
+        .iter()
+        .map(|func| {
+            let fn_ffi_name = format_ident!("{}", func.fn_ffi_name.0 .0);
+            let class_ffi_name = &func.class_ffi_name;
+            let object_ffi_name = &func.object_ffi_name;
+            let class_or_this = if func.is_static {
+                quote! { class: #class_ffi_name  }
+            } else {
+                quote! { this: #object_ffi_name  }
+            };
+            let arguments = func
+                .arguments
+                .iter()
+                .map(|arg| (&arg.name, &arg.rs_ty))
+                .map(|(name, rs_ty)| quote! { #name: #rs_ty })
+                .collect::<Vec<_>>();
+            let rs_result = &func.rs_result;
 
-        quote! {
-            fn { function.fn_ffi_name }(
-                &self,
-                #class_or_this,
-                #(#arguments),*   
-            ) -> #rs_result;
-        }
-    }).collect::<TokenStream>();
-
-    let extern_functions = class_ffi.functions.iter().map(|func| {
-        let signature = &func.signature.0;
-        let fn_doc = format!("JNI method signature {signature}");
-        let fn_export_ffi_name = format_ident!("{}", func.fn_export_ffi_name.0.0);
-        let class_ffi_name = &func.class_ffi_name;
-        let object_ffi_name = &func.object_ffi_name;
-        let class_or_this = if func.is_static {
-            quote!{ class: #class_ffi_name  }
-        } else {
-            quote!{ this: #object_ffi_name  }
-        };
-        let arguments = func.arguments.iter().map(|arg| 
-            (&arg.name, &arg.ty)
-        ).map(|(name, ty)| quote!{ #name: #ty }).collect::<Vec<_>>();
-        let result = &func.result;
-        let args_to_rust = func.arguments.iter().map(|arg| 
-            (&arg.name, &arg.rs_ty)
-        ).map(|(name, rs_ty)| quote!{ 
-            let #name = <#rs_ty>::java_to_rust(#name, env); 
-        }).collect::<Vec<_>>();
-        let fn_ffi_name = format_ident!("{}", func.fn_export_ffi_name.0.0);
-        let args_for_call = func.arguments.iter().map(|arg| 
-            (&arg.name, &arg.rs_ty)
-        ).map(|(name, rs_ty)| quote!{ 
-            let #name = <#rs_ty>::java_to_rust(#name, env); 
-        }).collect::<Vec<_>>();
-        let call_class_or_this = if func.is_static {
-            format_ident!("class")
-        } else {
-            format_ident!("this")
-        };
-        let args_call = func.arguments.iter().map(|arg| &arg.name).map(|name| quote!{#name}).collect::<Vec<_>>();
-
-        quote!{
-            #[doc(#fn_doc)]
-            #[no_mangle]
-            pub extern "system" fn fn_export_ffi_name<'j>(
-                env: JNIEnv<'j>,
-                #class_or_this,
-                #(#arguments),*
-            ) -> #result {
-                let myself = #trait_impl::from_env(env);
-    
-                #(#args_to_rust)*
-    
-                let result = myself.#fn_ffi_name (
-                    #call_class_or_this,
-                    #(#args_call),*
-                );
-
-                <#result>::rust_to_java(result, env)
+            quote! {
+                fn #fn_ffi_name(
+                    &self,
+                    #class_or_this,
+                    #(#arguments),*
+                ) -> #rs_result;
             }
-        }
-    }).collect::<TokenStream>();
+        })
+        .collect::<TokenStream>();
 
-    quote!{
+    let extern_functions = class_ffi
+        .functions
+        .iter()
+        .map(|func| {
+            let signature = &func.signature.0;
+            let fn_doc = format!("JNI method signature {signature}");
+            let fn_export_ffi_name = format_ident!("{}", func.fn_export_ffi_name.0 .0);
+            let class_ffi_name = &func.class_ffi_name;
+            let object_ffi_name = &func.object_ffi_name;
+            let class_or_this = if func.is_static {
+                quote! { class: #class_ffi_name  }
+            } else {
+                quote! { this: #object_ffi_name  }
+            };
+            let arguments = func
+                .arguments
+                .iter()
+                .map(|arg| (&arg.name, &arg.ty))
+                .map(|(name, ty)| quote! { #name: #ty })
+                .collect::<Vec<_>>();
+            let result = &func.result;
+            let args_to_rust = func
+                .arguments
+                .iter()
+                .map(|arg| (&arg.name, &arg.rs_ty))
+                .map(|(name, rs_ty)| {
+                    quote! {
+                        let #name = <#rs_ty>::java_to_rust(#name, env);
+                    }
+                })
+                .collect::<Vec<_>>();
+            let fn_ffi_name = format_ident!("{}", func.fn_ffi_name.0 .0);
+            let call_class_or_this = if func.is_static {
+                format_ident!("class")
+            } else {
+                format_ident!("this")
+            };
+            let args_call = func
+                .arguments
+                .iter()
+                .map(|arg| &arg.name)
+                .map(|name| quote! {#name})
+                .collect::<Vec<_>>();
+
+            quote! {
+                #[doc = #fn_doc]
+                #[no_mangle]
+                pub extern "system" fn #fn_export_ffi_name<'j>(
+                    env: JNIEnv<'j>,
+                    #class_or_this,
+                    #(#arguments),*
+                ) -> #result {
+                    let myself = #trait_impl::from_env(env);
+
+                    #(#args_to_rust)*
+
+                    let result = myself.#fn_ffi_name (
+                        #call_class_or_this,
+                        #(#args_call),*
+                    );
+
+                    <#result>::rust_to_java(result, env)
+                }
+            }
+        })
+        .collect::<TokenStream>();
+
+    quote! {
         // This is the trait developers must implement
         use super::#trait_impl;
 
         pub trait #trait_name<'j> {
             /// Costruct this type from the Java object
-            /// 
+            ///
             /// Implementations should consider storing both values as types on the implementation object
             fn from_env(env: JNIEnv<'j>) -> Self;
 
@@ -323,7 +365,10 @@ pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFf
     };
 
     let objects = objects.iter().map(generate_struct).collect::<TokenStream>();
-    let class_ffis = other_classes.iter().map(generate_class_ffi).collect::<TokenStream>();
+    let class_ffis = other_classes
+        .iter()
+        .map(generate_class_ffi)
+        .collect::<TokenStream>();
 
     quote! {
         #header
@@ -334,13 +379,6 @@ pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFf
     }
 }
 
-#[derive(Serialize)]
-pub(crate) struct RustFfi {
-    pub(crate) class_ffis: Vec<ClassFfi>,
-    pub(crate) objects: Vec<Object>,
-}
-
-#[derive(Serialize)]
 pub(crate) struct ClassFfi {
     pub(crate) class_name: String,
     pub(crate) type_name: RustTypeName,
@@ -349,7 +387,6 @@ pub(crate) struct ClassFfi {
     pub(crate) functions: Vec<Function>,
 }
 
-#[derive(Serialize)]
 pub(crate) struct Function {
     pub(crate) name: String,
     pub(crate) object_java_desc: JavaDesc,
@@ -365,14 +402,12 @@ pub(crate) struct Function {
     pub(crate) rs_result: RustTypeName,
 }
 
-#[derive(Serialize)]
 pub(crate) struct Arg {
-    pub(crate) name: String,
+    pub(crate) name: Ident,
     pub(crate) ty: RustTypeName,
     pub(crate) rs_ty: RustTypeName,
 }
 
-#[derive(Serialize)]
 pub(crate) struct Object {
     pub(crate) java_name: JavaDesc,
     pub(crate) class_name: RustTypeName,
@@ -429,7 +464,7 @@ impl Return {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub(crate) enum BaseJniTy {
     ///Byte
     Jbyte,
@@ -549,7 +584,7 @@ impl JavaArray {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub(crate) enum ObjectType {
     JClass,
     JByteBuffer,
@@ -627,8 +662,7 @@ impl<'o> From<&'o JavaDesc> for ObjectType {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub(crate) struct FuncAbi(JniAbi);
 
 impl From<JniAbi> for FuncAbi {
@@ -637,13 +671,11 @@ impl From<JniAbi> for FuncAbi {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub(crate) struct ClassAndFuncAbi(JniAbi);
 
 /// An escaped String for the Java JNI ABI
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub(crate) struct JniAbi(String);
 
 impl FuncAbi {
@@ -674,7 +706,7 @@ impl FuncAbi {
 
 impl ToTokens for FuncAbi {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.append(format_ident!("{}", self.0.0))
+        tokens.append(format_ident!("{}", self.0 .0))
     }
 }
 
@@ -782,8 +814,7 @@ impl fmt::Display for ClassAndFuncAbi {
 }
 
 /// Descriptor in java, like `java.lang.String` or `(Ljava.lang.String;)J`
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub(crate) struct JavaDesc(String);
 
 impl JavaDesc {
@@ -805,50 +836,106 @@ impl From<&str> for JavaDesc {
 }
 
 /// Descriptor in java, like `java.lang.String` or `(Ljava.lang.String;)J`
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
-pub(crate) struct RustTypeName(Cow<'static, str>);
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub(crate) struct RustTypeName{ path: Vec<Ident>, ty: Option<Ident>, lifetime: bool }
+
+fn path_from_name(name: &str) -> (Vec<Ident>, &str) {
+    let mut iter = name.rsplit("::");
+    let name = iter.next().expect("even empty strings should return the empty string");
+    let path = iter.map(|s| format_ident!("{s}")).collect();
+
+    (path, name)
+}
 
 impl RustTypeName {
     pub(crate) fn append(&self, s: &str) -> Self {
-        let no_lifetime = self.0.trim_end_matches("<'j>").to_string();
-        RustTypeName(Cow::Owned(no_lifetime + s))
+        let (path, s) = path_from_name(s);
+        let (s, lifetime) = if s.ends_with("<'j>") {
+            (s.trim_end_matches("<'j>"), true)
+        } else {
+            (s, self.lifetime)
+        };
+
+        if let Some(ty) = &self.ty {
+            Self{ path, ty: Some(format_ident!("{}{}", ty, s)), lifetime }
+        } else { 
+            Self { path: Vec::new(), ty: None, lifetime: false } 
+        }  
     }
 
     pub(crate) fn prepend(&self, s: &str) -> Self {
-        RustTypeName(Cow::Owned(s.to_string() + &self.0))
+        let (path, s) = path_from_name(s);
+        let (s, lifetime) = if s.ends_with("<'j>") {
+            (s.trim_end_matches("<'j>"), true)
+        } else {
+            (s, self.lifetime)
+        };
+
+        if let Some(ty) = &self.ty {
+            Self{ path, ty: Some(format_ident!("{}{}", s, ty)), lifetime }
+        } else {
+            Self { path: Vec::new(), ty: None, lifetime: false } 
+        }
+    }
+
+    pub(crate) fn no_lifetime(&self) -> Self {
+        Self { path: self.path.clone(), ty: self.ty.clone(), lifetime: false }
     }
 }
 
 impl From<JavaDesc> for RustTypeName {
     fn from(d: JavaDesc) -> Self {
         let abi_name = JniAbi::from(d.0);
-        Self(abi_name.to_string().into())
+        Self::from(&abi_name.0 as &str)
     }
 }
 
 impl From<String> for RustTypeName {
     fn from(s: String) -> Self {
-        RustTypeName(Cow::Owned(s))
+        Self::from(&s as &str)
     }
 }
 
-impl From<&'static str> for RustTypeName {
-    fn from(s: &'static str) -> Self {
-        Self(Cow::Borrowed(s))
+impl From<&str> for RustTypeName {
+    fn from(s: &str) -> Self {
+        let (path, s) = path_from_name(s);
+        let (s, lifetime) = if s.ends_with("<'j>") {
+            (s.trim_end_matches("<'j>"), true)
+        } else {
+            (s, false)
+        };
+
+        if s == "()" { 
+            Self { path: Vec::new(), ty: None, lifetime: false } 
+        } else {
+            Self{ path, ty: Some(format_ident!("{s}")), lifetime }
+        }
     }
 }
 
 impl fmt::Display for RustTypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        f.write_str(&self.0)
+        if let Some(ty) = &self.ty {
+            write!(f, "{}", ty)
+        } else {
+            write!(f, "()")
+        }
     }
 }
 
 impl ToTokens for RustTypeName {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let name = &self.0;
+        if let Some(ty) = &self.ty {
+            let name = ty;
+            let lifetime = if self.lifetime { quote!{<'j>} } else { quote!{} };
 
-        tokens.append(format_ident!("{name}"));
+            for i in self.path.iter().rev() {
+                tokens.extend(quote!{ #i:: });
+            }
+
+            tokens.extend(quote! { #name #lifetime });
+        } else {
+            tokens.extend(quote! { () });
+        }
     }
 }
