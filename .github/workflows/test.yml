@@ -40,5 +40,8 @@ jobs:
     
     - uses: extractions/setup-just@v1
 
+    - name: install fd
+      run: cargo install fd-find
+
     - name: just test
       run: just test
