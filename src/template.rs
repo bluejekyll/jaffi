@@ -314,6 +314,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
             quote! {
                 #[doc = #fn_doc]
                 #[no_mangle]
+                #[allow(improper_ctypes_definitions)]
                 pub extern "system" fn #fn_export_ffi_name<'j>(
                     env: JNIEnv<'j>,
                     #class_or_this,
