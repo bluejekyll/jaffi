@@ -16,6 +16,5 @@ enum-as-inner = "0.5"
 jaffi_support = { version = "0.1.0", path = "./jaffi_support" }
 proc-macro2 = "1.0.40"
 quote = "1.0.20"
-serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.20"
 typed-builder = "0.10.0"
