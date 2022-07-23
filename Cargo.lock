@@ -76,6 +76,8 @@ dependencies = [
  "cafebabe",
  "enum-as-inner",
  "jaffi_support",
+ "proc-macro2",
+ "quote",
  "serde",
  "thiserror",
  "tinytemplate",

@@ -12,6 +12,8 @@ use enum_as_inner::EnumAsInner;
 use jaffi_support::{
     JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
 };
+use proc_macro2::{Ident, TokenStream};
+use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use serde::Serialize;
 
 use tinytemplate::TinyTemplate;
@@ -256,6 +258,235 @@ pub(crate) fn new_engine() -> Result<TinyTemplate<'static>, Error> {
     tt.add_template(JAVA_FUNCTION_CALL, JAVA_FUNCTION_CALL_TEMPLATE)?;
     tt.set_default_formatter(&tinytemplate::format_unescaped);
     Ok(tt)
+}
+
+fn generate_function(func: &Function) -> TokenStream {
+    let java_doc = format!("A wrapper for the java function {}", func.name);
+    let fn_ffi_name = &func.fn_ffi_name;
+    let add_pub = if !func.is_static {
+        quote!{pub}
+    } else {
+        quote!{}
+    };
+    let amp_self = if !func.is_constructor {
+        quote!{&self,}
+    } else {
+        quote!{}
+    };    let arguments = func.arguments.iter().map(|arg| 
+        (&arg.name, &arg.rs_ty)
+    ).map(|(name, rs_ty)| quote!{ #name: #rs_ty }).collect::<Vec<_>>();
+    let rs_result = &func.rs_result;
+    let result = &func.result;
+    let to_jvalue_args= func.arguments.iter().map(|arg| 
+        (&arg.name, &arg.rs_ty, &arg.ty)
+    ).map(|(name, rs_ty, ty)| 
+        quote!{ <#rs_ty as IntoJavaValue<'j, #ty>>::into_java_value(#name, env), }
+    ).collect::<Vec<_>>();
+    let object_java_desc = format!("\"{}\"", func.object_java_desc.0);
+    let signature = format!("\"{}\"", func.signature.0);
+    let name = &func.name;
+    let from_java_value = quote!{ <#rs_result as FromJavaValue<#result>>::from_jvalue(env, jvalue) };
+    let method_call = if func.is_constructor {
+        quote!{
+            let jobject = env.new_object(
+                #object_java_desc,
+                #signature,
+                args
+            ).expect("error calling Java constructor");
+            <{ rs_result } as From<JObject>>::from(jobject)
+        }
+    } else if func.is_static {
+        quote!{
+            match env.call_static_method(
+                #object_java_desc,
+                #name,
+                #signature,
+                args
+            ) {
+                #from_java_value
+            };
+        }
+    } else {
+        quote!{
+            match env.call_method(
+                self.0,
+                #name,
+                #signature,
+                args
+            ) {
+                #from_java_value
+            };
+        }
+    };
+
+
+
+    quote! {
+        #[doc = #java_doc]
+        /// 
+        /// # Arguments
+        /// 
+        /// * `env` - this should be the same JNIEnv "owning" this object
+        #add_pub fn #fn_ffi_name(
+            #amp_self
+            env: JNIEnv<'j>,
+            #(#arguments),*  
+        ) -> #rs_result {
+            let args: &[JValue<'j>] = &[
+                #(#to_jvalue_args),* 
+            ];
+ 
+            let rust_value = {
+                #method_call
+            };
+
+            rust_value
+        }
+    }
+}
+
+fn generate_struct(obj: &Object) -> TokenStream {
+    let class_name = &obj.class_name;
+    let obj_name = &obj.obj_name;
+    let static_trait_name = &obj.static_trait_name;
+    let java_name = format!("\"{}\"", obj.java_name.as_str());
+
+    let mut interfaces = TokenStream::new();
+    for interface in &obj.interfaces {
+        let as_interface = format_ident!("as_{interface}");
+
+        let interface_tokens = quote! {
+            pub fn #as_interface(&self) -> #interface<'j> {
+                #interface(self.0)
+            }
+        };
+
+        interfaces.extend(interface_tokens);
+    }
+
+    let mut methods = TokenStream::new();
+    for function in obj.methods.iter().filter(|f| !f.is_static) {
+        let function_tokens = generate_function(function);
+        methods.extend(function_tokens);
+    }
+
+    let mut static_methods = TokenStream::new();
+    for function in obj.methods.iter().filter(|f| f.is_static) {
+        let function_tokens = generate_function(function);
+        static_methods.extend(function_tokens);
+    }
+
+    quote! {
+        #[derive(Clone, Copy, Debug)]
+        #[repr(transparent)]
+        pub struct { #class_name -}(JClass<'j>);
+
+        impl<'j> #static_trait_name for #class_name {}
+
+        impl<'j> #class_name {
+            fn java_class_desc() -> &'static str {
+                #java_name
+            }
+        }
+
+        impl<'j> std::ops::Deref for #class_name  {
+            type Target = JClass<'j>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl<'j> FromJavaToRust<'j, #class_name> for #class_name {
+            fn java_to_rust(java: #class_name, _env: JNIEnv<'j>) -> Self {
+                java
+            }
+        }
+
+        impl<'j> FromRustToJava<'j, #class_name> for #class_name {
+            fn rust_to_java(rust: #class_name, _env: JNIEnv<'j>) -> Self {
+                rust
+            }
+        }
+
+        #[derive(Clone, Copy, Debug)]
+        #[repr(transparent)]
+        pub struct #obj_name(JObject<'j>);
+
+        impl<'j> #static_trait_name for #obj_name {}
+
+        impl<'j> #obj_name {
+            /// Returns the type name in java, e.g. `Object` is `"java/lang/Object"`
+            pub fn java_class_desc() -> &'static str {
+                #java_name
+            }
+
+            #interfaces
+
+            #methods
+        }
+
+        pub trait #static_trait_name {
+            #static_methods
+        }
+
+        impl<'j> std::ops::Deref for #obj_name {
+            type Target = JObject<'j>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl<'j> From<#obj_name> for JObject<'j> {
+            fn from(obj: #obj_name) -> Self {
+                obj.0
+            }
+        }
+
+        impl<'j> From<JObject<'j>> for #obj_name {
+            fn from(obj: JObject<'j>) -> Self {
+                Self(obj)
+            }
+        }
+
+        impl<'j> FromJavaToRust<'j, #obj_name> for #obj_name {
+            fn java_to_rust(java: #obj_name, _env: JNIEnv<'j>) -> Self  {
+                java
+            }
+        }
+
+        impl<'j> FromRustToJava<'j, #obj_name> for #obj_name {
+            fn rust_to_java(rust: #obj_name, _env: JNIEnv<'j>) -> Self {
+                rust
+            }
+        }
+
+    }
+}
+
+pub(crate) fn generate_java_ffi(objects: Vec<Object>) -> TokenStream {
+    let header = quote! {
+        use jaffi_support::{
+            FromJavaToRust,
+            FromRustToJava,
+            FromJavaValue,
+            IntoJavaValue,
+            jni::{
+                JNIEnv,
+                objects::{JClass, JObject, JValue},
+                self,
+            }
+        };
+    };
+
+    let objects = objects.iter().map(generate_struct).collect::<TokenStream>();
+
+    quote! {
+        #header
+
+        #objects
+    }
 }
 
 #[derive(Serialize)]
@@ -596,6 +827,12 @@ impl FuncAbi {
     }
 }
 
+impl ToTokens for FuncAbi {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.append(format_ident!("{}", self.0.0))
+    }
+}
+
 /// Converts the method info into the native ABI name, see [resolving native method names](https://docs.oracle.com/en/java/javase/18/docs/specs/jni/design.html#resolving-native-method-names)
 ///
 /// ```text
@@ -760,5 +997,13 @@ impl From<&'static str> for RustTypeName {
 impl fmt::Display for RustTypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.write_str(&self.0)
+    }
+}
+
+impl ToTokens for RustTypeName {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let name = &self.0;
+
+        tokens.append(format_ident!("{name}"));
     }
 }
