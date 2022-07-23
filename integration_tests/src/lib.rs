@@ -21,17 +21,17 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         Self { env }
     }
 
-    fn void_1void(&self, _this: net_bluejekyll_NativePrimitivesClass<'j>) -> () {
+    fn void_1void(&self, _this: NetBluejekyllNativePrimitivesClass<'j>) -> () {
         println!("void_1void: do nothing");
     }
 
-    fn void_1long__J(&self, _this: net_bluejekyll_NativePrimitivesClass<'j>, arg0: i64) -> () {
+    fn void_1long__J(&self, _this: NetBluejekyllNativePrimitivesClass<'j>, arg0: i64) -> () {
         println!("void_1long__J: got {arg0}");
     }
 
     fn void_1long__JI(
         &self,
-        _this: net_bluejekyll_NativePrimitives<'j>,
+        _this: NetBluejekyllNativePrimitives<'j>,
         arg0: i64,
         arg1: i32,
     ) -> i64 {
@@ -42,7 +42,7 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
 
     fn long_1int_1int(
         &self,
-        _this: net_bluejekyll_NativePrimitives<'j>,
+        _this: NetBluejekyllNativePrimitives<'j>,
         arg0: i32,
         arg1: i32,
     ) -> i64 {
@@ -53,7 +53,7 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
 
     fn add_1values_1native(
         &self,
-        this: net_bluejekyll_NativePrimitives<'j>,
+        this: NetBluejekyllNativePrimitives<'j>,
         arg0: i32,
         arg1: i32,
     ) -> i64 {
@@ -63,39 +63,39 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         ret
     }
 
-    fn print_1hello_1native(&self, this: net_bluejekyll_NativePrimitives<'j>) -> () {
+    fn print_1hello_1native(&self, this: NetBluejekyllNativePrimitives<'j>) -> () {
         println!("print_1hello_1native: calling print_hello");
         this.print_1hello(self.env)
     }
 
-    fn print_1hello_1native_1static(&self, this: net_bluejekyll_NativePrimitivesClass<'j>) -> () {
+    fn print_1hello_1native_1static(&self, this: NetBluejekyllNativePrimitivesClass<'j>) -> () {
         println!("print_1hello_1native_1static: calling print_hello, statically");
         this.print_1hello(self.env)
     }
 
     fn call_1dad_1native(
         &self,
-        this: net_bluejekyll::net_bluejekyll_NativePrimitives<'j>,
+        this: net_bluejekyll::NetBluejekyllNativePrimitives<'j>,
         arg0: i32,
     ) -> i32 {
         println!("call_1dad_1native with {arg0}");
 
-        let parent = this.as_net_bluejekyll_ParentClass();
+        let parent = this.as_net_bluejekyll_parent_class();
         parent.call_1dad(self.env, arg0)
     }
 
     fn unsupported(
         &self,
-        _this: net_bluejekyll_NativePrimitives<'j>,
-        arg0: net_bluejekyll::java_io_File<'j>,
-    ) -> net_bluejekyll::java_io_File<'j> {
+        _this: NetBluejekyllNativePrimitives<'j>,
+        arg0: net_bluejekyll::JavaIoFile<'j>,
+    ) -> net_bluejekyll::JavaIoFile<'j> {
         arg0
     }
 
     fn unsupported_1return_1native(
         &self,
-        _this: net_bluejekyll_NativePrimitives<'j>,
-    ) -> net_bluejekyll_Unsupported2<'j> {
+        _this: NetBluejekyllNativePrimitives<'j>,
+    ) -> NetBluejekyllUnsupported2<'j> {
         panic!("this is just a compilation test")
     }
 }
@@ -114,9 +114,9 @@ impl<'j> net_bluejekyll::NativeStringsRs<'j> for NativeStringsRsImpl<'j> {
 
     fn ctor(
         &self,
-        _class: net_bluejekyll_NativeStringsClass<'j>,
+        _class: NetBluejekyllNativeStringsClass<'j>,
         arg0: String,
-    ) -> net_bluejekyll_NativeStrings<'j> {
+    ) -> NetBluejekyllNativeStrings<'j> {
         println!("ctor: {arg0}");
         NetBluejekyllNativeStrings::new_1net_bluejekyll_NativeStrings__Ljava_lang_String_2(
             self.env, arg0,
@@ -151,7 +151,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
 
     fn sendBytes(
         &self,
-        _this: net_bluejekyll::net_bluejekyll_NativeArraysClass<'j>,
+        _this: net_bluejekyll::NetBluejekyllNativeArraysClass<'j>,
         arg0: jaffi_support::arrays::JavaByteArray<'_>,
     ) {
         let slice = arg0.as_slice(&self.env).expect("no data?");
@@ -161,7 +161,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
 
     fn getBytes(
         &self,
-        _this: net_bluejekyll::net_bluejekyll_NativeArraysClass<'j>,
+        _this: net_bluejekyll::NetBluejekyllNativeArraysClass<'j>,
         arg0: jaffi_support::arrays::JavaByteArray<'j>,
     ) -> jaffi_support::arrays::JavaByteArray<'j> {
         println!(
@@ -173,7 +173,7 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
 
     fn newBytes(
         &self,
-        _this: net_bluejekyll::net_bluejekyll_NativeArraysClass<'j>,
+        _this: net_bluejekyll::NetBluejekyllNativeArraysClass<'j>,
     ) -> jaffi_support::arrays::JavaByteArray<'j> {
         let bytes: [u8; 4] = [0xCA, 0xFE, 0xBA, 0xBE];
 
