@@ -1,0 +1,47 @@
+name: test
+
+on:
+  push:
+    branches:
+      - main
+      - release/**
+  pull_request:
+    branches:
+      - main
+      - release/**
+  schedule:
+    - cron:  '0 3 * * 4'
+
+env:
+  CARGO_MAKE_VERSION: '0.34.0'
+
+jobs:
+  ## Run all default oriented feature sets across all platforms.
+  platform-matrix:
+    name: platform
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        #os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest]
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    
+    - uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin' # See 'Supported distributions' for available options
+        java-version: '17'
+    
+    - uses: extractions/setup-just@v1
+
+    - name: install fd
+      run: cargo install fd-find
+
+    - name: just test
+      run: just test
