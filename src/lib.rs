@@ -93,11 +93,6 @@ impl<'a> Jaffi<'a> {
         // create the wrapper types
         let objects = self.generate_support_types(argument_types)?;
 
-        let context = RustFfi {
-            class_ffis,
-            objects,
-        };
-
         // render the file
         let output_dir = &Cow::Borrowed(Path::new("."));
         let output_dir = if let Some(ref dir) = self.output_dir {
@@ -111,7 +106,8 @@ impl<'a> Jaffi<'a> {
             .join("generated_jaffi")
             .with_extension("rs");
 
-        let rendered = template.render(template::RUST_FFI, &context)?;
+        let ffi_tokens = template::generate_java_ffi(objects, class_ffis);
+        let rendered = ffi_tokens.to_string();
 
         let mut rust_file = File::create(rust_file)?;
         rust_file.write_all(rendered.as_bytes())?;
