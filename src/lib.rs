@@ -24,7 +24,7 @@ mod error;
 mod template;
 
 pub use error::{Error, ErrorKind};
-use heck::{AsUpperCamelCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use quote::format_ident;
 use template::{
     Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustTypeName,
@@ -207,7 +207,6 @@ impl<'a> Jaffi<'a> {
         // build up the rendering information.
         let class_ffi = template::ClassFfi {
             class_name: class_file.this_class.to_string(),
-            type_name: RustTypeName::from(JavaDesc::from(&class_file.this_class as &str)),
             trait_name,
             trait_impl,
             functions,
