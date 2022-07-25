@@ -21,6 +21,7 @@
 )]
 
 mod error;
+mod ident;
 mod template;
 
 pub use error::{Error, ErrorKind};

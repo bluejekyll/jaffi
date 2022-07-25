@@ -197,3 +197,113 @@ impl<'j> net_bluejekyll::NativeArraysRs<'j> for NativeArraysRsImpl<'j> {
         bytes
     }
 }
+
+struct RustKeywordsRsImpl<'j> {
+    _env: JNIEnv<'j>,
+}
+
+impl<'j> RustKeywordsRs<'j> for RustKeywordsRsImpl<'j> {
+    fn from_env(env: JNIEnv<'j>) -> Self {
+        Self { _env: env }
+    }
+
+    fn r#as(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#async(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#await(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r_crate(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#dyn(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#extern(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#fn(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#impl(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#in(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#let(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#loop(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#match(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#mod(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#move(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#mut(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#pub(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#ref(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r_self(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#struct(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#trait(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#type(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#union(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#unsafe(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#use(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
+    fn r#where(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+}
