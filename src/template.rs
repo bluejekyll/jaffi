@@ -16,6 +16,8 @@ use proc_macro2::{TokenStream, Ident};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use heck::{ToUpperCamelCase, ToSnakeCase};
 
+use crate::ident::make_ident;
+
 fn generate_function(func: &Function) -> TokenStream {
     let java_doc = format!("A wrapper for the java function {}", func.name);
     let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
@@ -233,8 +235,8 @@ fn generate_struct(obj: &Object) -> TokenStream {
 }
 
 fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
-    let trait_impl = format_ident!("{}", class_ffi.trait_impl);
-    let trait_name = format_ident!("{}", class_ffi.trait_name);
+    let trait_impl = make_ident(&class_ffi.trait_impl);
+    let trait_name = make_ident(&class_ffi.trait_name);
     let doc_str = format!("Implement this to support with `super::{trait_impl}` to support native methods from `{}`", class_ffi.class_name);
 
     let trait_functions = class_ffi
@@ -273,7 +275,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
         .map(|func| {
             let signature = &func.signature.0;
             let fn_doc = format!("JNI method signature {signature}");
-            let fn_export_ffi_name = format_ident!("{}", func.fn_export_ffi_name.0 .0);
+            let fn_export_ffi_name = make_ident(&func.fn_export_ffi_name.0 .0);
             let class_ffi_name = &func.class_ffi_name;
             let object_ffi_name = &func.object_ffi_name;
             let class_or_this = if func.is_static {
@@ -704,13 +706,13 @@ impl FuncAbi {
     }
 
     fn for_rust_ident(&self) -> Ident {
-        format_ident!("{}", self.0.0.to_snake_case())
+        make_ident(&self.0.0.to_snake_case())
     }
 }
 
 impl ToTokens for FuncAbi {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.append(format_ident!("{}", self.0 .0))
+        tokens.append(make_ident(&self.0 .0))
     }
 }
 
@@ -850,7 +852,7 @@ pub(crate) struct RustTypeName{ path: Vec<Ident>, ty: Option<Ident>, lifetime: b
 fn path_from_name(name: &str) -> (Vec<Ident>, &str) {
     let mut iter = name.rsplit("::");
     let name = iter.next().expect("even empty strings should return the empty string");
-    let path = iter.map(|s| format_ident!("{s}")).collect();
+    let path = iter.map(|s| make_ident(s)).collect();
 
     (path, name)
 }
@@ -916,7 +918,7 @@ impl From<&str> for RustTypeName {
         if s == "()" { 
             Self { path: Vec::new(), ty: None, lifetime: false } 
         } else {
-            Self{ path, ty: Some(format_ident!("{s}")), lifetime }
+            Self{ path, ty: Some(make_ident(s)), lifetime }
         }
     }
 }
