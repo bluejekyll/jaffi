@@ -21,59 +21,54 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         Self { env }
     }
 
-    fn void_1void(&self, _this: NetBluejekyllNativePrimitivesClass<'j>) -> () {
+    fn void_void(&self, _this: NetBluejekyllNativePrimitivesClass<'j>) -> () {
         println!("void_1void: do nothing");
     }
 
-    fn void_1long_j(&self, _this: NetBluejekyllNativePrimitivesClass<'j>, arg0: i64) -> () {
+    fn void_long_j(&self, _this: NetBluejekyllNativePrimitivesClass<'j>, arg0: i64) -> () {
         println!("void_1long__J: got {arg0}");
     }
 
-    fn void_1long_ji(&self, _this: NetBluejekyllNativePrimitives<'j>, arg0: i64, arg1: i32) -> i64 {
+    fn void_long_ji(&self, _this: NetBluejekyllNativePrimitives<'j>, arg0: i64, arg1: i32) -> i64 {
         let ret = arg0 + arg1 as i64;
         println!("void_1long__JI: {arg0} + {arg1} = {ret}");
         ret
     }
 
-    fn long_1int_1int(
-        &self,
-        _this: NetBluejekyllNativePrimitives<'j>,
-        arg0: i32,
-        arg1: i32,
-    ) -> i64 {
+    fn long_int_int(&self, _this: NetBluejekyllNativePrimitives<'j>, arg0: i32, arg1: i32) -> i64 {
         let ret = arg0 as i64 + arg1 as i64;
         println!("void_1long__JI: {arg0} + {arg1} = {ret}");
         ret
     }
 
-    fn add_1values_1native(
+    fn add_values_native(
         &self,
         this: NetBluejekyllNativePrimitives<'j>,
         arg0: i32,
         arg1: i32,
     ) -> i64 {
-        println!("add_1values_1native: calling java with: {arg0}, {arg1}");
-        let ret = this.add_1values(self.env, arg0, arg1);
+        println!("add_values_native: calling java with: {arg0}, {arg1}");
+        let ret = this.add_values(self.env, arg0, arg1);
         println!("add_1values_1native: got result from java: {ret}");
         ret
     }
 
-    fn print_1hello_1native(&self, this: NetBluejekyllNativePrimitives<'j>) -> () {
-        println!("print_1hello_1native: calling print_hello");
-        this.print_1hello(self.env)
+    fn print_hello_native(&self, this: NetBluejekyllNativePrimitives<'j>) -> () {
+        println!("print_hello_native: calling print_hello");
+        this.print_hello(self.env)
     }
 
-    fn print_1hello_1native_1static(&self, this: NetBluejekyllNativePrimitivesClass<'j>) -> () {
-        println!("print_1hello_1native_1static: calling print_hello, statically");
-        this.print_1hello(self.env)
+    fn print_hello_native_static(&self, this: NetBluejekyllNativePrimitivesClass<'j>) -> () {
+        println!("print_hello_native_static: calling print_hello, statically");
+        this.print_hello(self.env)
     }
 
-    fn call_1dad_1native(
+    fn call_dad_native(
         &self,
         this: net_bluejekyll::NetBluejekyllNativePrimitives<'j>,
         arg0: i32,
     ) -> i32 {
-        println!("call_1dad_1native with {arg0}");
+        println!("call_dad_native with {arg0}");
 
         let parent = this.as_net_bluejekyll_parent_class();
         parent.call_1dad(self.env, arg0)
@@ -87,7 +82,7 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         arg0
     }
 
-    fn unsupported_1return_1native(
+    fn unsupported_return_native(
         &self,
         _this: NetBluejekyllNativePrimitives<'j>,
     ) -> NetBluejekyllUnsupported2<'j> {
