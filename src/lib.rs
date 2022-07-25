@@ -332,6 +332,7 @@ impl<'a> Jaffi<'a> {
             let descriptor = JavaDesc::from(method.descriptor.to_string());
 
             let is_constructor = method.name == "<init>";
+            let is_native = method.access_flags.contains(MethodAccessFlags::NATIVE);
             let is_static = method.access_flags.contains(MethodAccessFlags::STATIC);
 
             let object_java_desc = this_class_desc.clone();
@@ -405,6 +406,7 @@ impl<'a> Jaffi<'a> {
                 signature: descriptor,
                 is_constructor,
                 is_static,
+                is_native,
                 arguments,
                 result: result.to_jni_type_name(),
                 rs_result: result.to_rs_type_name(),

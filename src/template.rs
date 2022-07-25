@@ -19,7 +19,9 @@ use heck::{ToUpperCamelCase, ToSnakeCase};
 use crate::ident::make_ident;
 
 fn generate_function(func: &Function) -> TokenStream {
-    let java_doc = format!("A wrapper for the java function {}", func.name);
+    let name = &func.name;
+    let jni_sig = &func.signature;
+    let java_doc = format!("A wrapper for the java function `{name}{jni_sig}`");
     let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
     let add_pub = if !func.is_static {
         quote! {pub}
@@ -113,7 +115,9 @@ fn generate_function(func: &Function) -> TokenStream {
 
 fn generate_struct(obj: &Object) -> TokenStream {
     let class_name = &obj.class_name;
+    let static_java_doc = format!("Wrapper for the static methods of Java class `{}`", obj.java_name);
     let obj_name = &obj.obj_name;
+    let java_doc = format!("Wrapper for the public methods of Java class `{}`", obj.java_name);
     let static_trait_name = &obj.static_trait_name;
     let java_name = obj.java_name.as_str();
 
@@ -146,6 +150,7 @@ fn generate_struct(obj: &Object) -> TokenStream {
         .collect::<TokenStream>();
 
     quote! {
+        #[doc = #static_java_doc]
         #[derive(Clone, Copy, Debug)]
         #[repr(transparent)]
         pub struct #class_name (JClass<'j>);
@@ -178,6 +183,7 @@ fn generate_struct(obj: &Object) -> TokenStream {
             }
         }
 
+        #[doc = #java_doc]
         #[derive(Clone, Copy, Debug)]
         #[repr(transparent)]
         pub struct #obj_name(JObject<'j>);
@@ -237,12 +243,15 @@ fn generate_struct(obj: &Object) -> TokenStream {
 fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
     let trait_impl = make_ident(&class_ffi.trait_impl);
     let trait_name = make_ident(&class_ffi.trait_name);
-    let doc_str = format!("Implement this to support with `super::{trait_impl}` to support native methods from `{}`", class_ffi.class_name);
+    let doc_str = format!("Implement this with `super::{trait_impl}` to support native methods from `{}`", class_ffi.class_name);
 
     let trait_functions = class_ffi
         .functions
         .iter()
         .map(|func| {
+            let name = &func.name;
+            let jni_sig = &func.signature;
+            let java_doc = format!("Implementation for the method `{name}{jni_sig}`");
             let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
             let class_ffi_name = &func.class_ffi_name;
             let object_ffi_name = &func.object_ffi_name;
@@ -260,6 +269,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
             let rs_result = &func.rs_result;
 
             quote! {
+                #[doc = #java_doc]
                 fn #fn_ffi_name(
                     &self,
                     #class_or_this,
@@ -274,7 +284,9 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
         .iter()
         .map(|func| {
             let signature = &func.signature.0;
-            let fn_doc = format!("JNI method signature {signature}");
+            let object_name = &func.object_java_desc;
+            let name = &func.name;
+            let fn_doc = format!("Java native `{object_name}.{name}{signature}`.");
             let fn_export_ffi_name = make_ident(&func.fn_export_ffi_name.0 .0);
             let class_ffi_name = &func.class_ffi_name;
             let object_ffi_name = &func.object_ffi_name;
@@ -315,6 +327,8 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
 
             quote! {
                 #[doc = #fn_doc]
+                ///
+                /// This will be linked into the Java Object at runtime via the `ld_library_path` rules in Java.
                 #[no_mangle]
                 #[allow(improper_ctypes_definitions)]
                 pub extern "system" fn #fn_export_ffi_name<'j>(
@@ -401,6 +415,7 @@ pub(crate) struct Function {
     pub(crate) fn_ffi_name: FuncAbi,
     pub(crate) signature: JavaDesc,
     pub(crate) is_static: bool,
+    pub(crate) is_native: bool,
     pub(crate) is_constructor: bool,
     pub(crate) arguments: Vec<Arg>,
     pub(crate) result: RustTypeName,
@@ -842,6 +857,12 @@ impl From<String> for JavaDesc {
 impl From<&str> for JavaDesc {
     fn from(s: &str) -> Self {
         JavaDesc::from(s.to_string())
+    }
+}
+
+impl fmt::Display for JavaDesc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        f.write_str(&self.0)
     }
 }
 
