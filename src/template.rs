@@ -140,13 +140,13 @@ fn generate_struct(obj: &Object) -> TokenStream {
         .methods
         .iter()
         .filter(|f| !f.is_static)
-        .map(|f| generate_function(f))
+        .map(generate_function)
         .collect::<TokenStream>();
     let static_methods = obj
         .methods
         .iter()
         .filter(|f| f.is_static)
-        .map(|f| generate_function(f))
+        .map(generate_function)
         .collect::<TokenStream>();
 
     quote! {
@@ -702,7 +702,7 @@ impl FuncAbi {
     pub(crate) fn with_class(&self, class: &JavaDesc) -> ClassAndFuncAbi {
         let mut ffi_name = "Java_".to_string();
         ffi_name.push_str(&class.escape_for_extern_fn());
-        ffi_name.push_str("_");
+        ffi_name.push('_');
         ffi_name.push_str(&self.0 .0);
         ClassAndFuncAbi(JniAbi(ffi_name))
     }
@@ -879,7 +879,7 @@ pub(crate) struct RustTypeName{ path: Vec<Ident>, ty: Option<Ident>, lifetime: b
 fn path_from_name(name: &str) -> (Vec<Ident>, &str) {
     let mut iter = name.rsplit("::");
     let name = iter.next().expect("even empty strings should return the empty string");
-    let path = iter.map(|s| make_ident(s)).collect();
+    let path = iter.map(make_ident).collect();
 
     (path, name)
 }
