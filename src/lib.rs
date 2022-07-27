@@ -130,6 +130,8 @@ impl<'a> Jaffi<'a> {
             let class = class_to_path(class.as_str());
 
             let mut found_class = false;
+
+            #[allow(clippy::unimplemented)]
             'search: for classpath in classpath {
                 if classpath.is_dir() && lookup_from_path(&*classpath, &class) {
                     found_class = true;
