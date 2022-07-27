@@ -421,6 +421,7 @@ pub(crate) struct Function {
     pub(crate) arguments: Vec<Arg>,
     pub(crate) result: RustTypeName,
     pub(crate) rs_result: RustTypeName,
+    pub(crate) exceptions: Vec<JavaDesc>,
 }
 
 pub(crate) struct Arg {

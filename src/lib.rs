@@ -25,11 +25,6 @@ mod ident;
 mod template;
 
 pub use error::{Error, ErrorKind};
-use heck::{ToSnakeCase, ToUpperCamelCase};
-use quote::format_ident;
-use template::{
-    Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustTypeName,
-};
 
 use std::{
     borrow::Cow,
@@ -39,7 +34,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cafebabe::{ClassFile, MethodAccessFlags, MethodInfo, ParseOptions};
+use cafebabe::{attributes::AttributeData, ClassFile, MethodAccessFlags, MethodInfo, ParseOptions};
+use heck::{ToSnakeCase, ToUpperCamelCase};
+use quote::format_ident;
+use template::{
+    Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustTypeName,
+};
 use typed_builder::TypedBuilder;
 
 use crate::template::{BaseJniTy, FuncAbi, JavaDesc};
@@ -416,6 +416,24 @@ impl<'a> Jaffi<'a> {
             };
             let rust_method_name = FuncAbi::from_raw(rust_method_name);
 
+            // get the exceptions from the method
+            let exceptions: HashSet<_> = method
+                .attributes
+                .iter()
+                .filter_map(|attribute| {
+                    if let AttributeData::Exceptions(exceptions) = &attribute.data {
+                        Some(exceptions)
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .collect();
+            let exceptions: Vec<JavaDesc> = exceptions
+                .into_iter()
+                .map(|s| JavaDesc::from(s.to_string()))
+                .collect();
+
             let function = Function {
                 name: method.name.to_string(),
                 object_java_desc,
@@ -430,6 +448,7 @@ impl<'a> Jaffi<'a> {
                 arguments,
                 result: result.to_jni_type_name(),
                 rs_result: result.to_rs_type_name(),
+                exceptions,
             };
 
             functions.push(function);
