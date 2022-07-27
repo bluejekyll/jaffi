@@ -306,3 +306,18 @@ impl<'j> RustKeywordsRs<'j> for RustKeywordsRsImpl<'j> {
         todo!()
     }
 }
+
+struct ExceptionsRsImpl<'j> {
+    env: JNIEnv<'j>,
+}
+
+impl<'j> ExceptionsRs<'j> for ExceptionsRsImpl<'j> {
+    fn from_env(env: JNIEnv<'j>) -> Self {
+        Self { env }
+    }
+
+    fn throws_something(&self, this: NetBluejekyllExceptions<'j>) {}
+
+    fn throws_something_ljava_lang_string_2(&self, this: NetBluejekyllExceptions<'j>, msg: String) {
+    }
+}
