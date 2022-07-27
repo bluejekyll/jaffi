@@ -1,8 +1,7 @@
 package net.bluejekyll;
 
 public class RustKeywords {
-    // FIXME: add this back, need to dedup on case changes
-    //public native void Self();
+    public native void Self();
     public native void as();
     public native void async();
     public native void await();

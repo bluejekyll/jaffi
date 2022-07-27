@@ -25,7 +25,7 @@ mod ident;
 mod template;
 
 pub use error::{Error, ErrorKind};
-use heck::ToUpperCamelCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use quote::format_ident;
 use template::{
     Arg, ClassFfi, Function, JniAbi, JniType, Object, ObjectType, Return, RustTypeName,
@@ -318,6 +318,8 @@ impl<'a> Jaffi<'a> {
             map
         });
 
+        let mut rust_method_names: HashMap<String, usize> = HashMap::new();
+
         // All objects needed to support calls into JNI from Java
         let mut argument_objects = HashSet::<JavaDesc>::new();
 
@@ -328,7 +330,7 @@ impl<'a> Jaffi<'a> {
 
         // build up the function definitions
         let mut functions = Vec::new();
-        for method in methods {
+        for (index, method) in methods.into_iter().enumerate() {
             let descriptor = JavaDesc::from(method.descriptor.to_string());
 
             let is_constructor = method.name == "<init>";
@@ -396,13 +398,29 @@ impl<'a> Jaffi<'a> {
                     .expect("this should have been a custom object"),
             );
 
+            // dedup the rust method names
+            let rust_method_name: String = fn_ffi_name.to_string().to_snake_case();
+            let rust_method_name = if *rust_method_names
+                .entry(rust_method_name.clone())
+                .and_modify(|i| *i += 1)
+                .or_default()
+                == 0
+            {
+                rust_method_name
+            } else {
+                // we're going to add the index into the list of methods from the Class file, hopefully this is consistently ordered with the Code?
+                //  otherwise this will create confusing results when the classfile changes after Java recompilation...
+                format!("{rust_method_name}_{index}")
+            };
+            let rust_method_name = FuncAbi::from_raw(rust_method_name);
+
             let function = Function {
                 name: method.name.to_string(),
                 object_java_desc,
                 fn_export_ffi_name,
                 class_ffi_name,
                 object_ffi_name,
-                fn_ffi_name,
+                rust_method_name,
                 signature: descriptor,
                 is_constructor,
                 is_static,

@@ -274,6 +274,10 @@ impl<'j> RustKeywordsRs<'j> for RustKeywordsRsImpl<'j> {
         todo!()
     }
 
+    fn self_18(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
+        todo!()
+    }
+
     fn r#struct(&self, _this: NetBluejekyllRustKeywords<'j>) -> () {
         todo!()
     }

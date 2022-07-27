@@ -22,7 +22,7 @@ fn generate_function(func: &Function) -> TokenStream {
     let name = &func.name;
     let jni_sig = &func.signature;
     let java_doc = format!("A wrapper for the java function `{name}{jni_sig}`");
-    let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
+    let rust_method_name = func.rust_method_name.for_rust_ident();
     let add_pub = if !func.is_static {
         quote! {pub}
     } else {
@@ -95,7 +95,7 @@ fn generate_function(func: &Function) -> TokenStream {
         /// # Arguments
         ///
         /// * `env` - this should be the same JNIEnv "owning" this object
-        #add_pub fn #fn_ffi_name(
+        #add_pub fn #rust_method_name(
             #amp_self
             env: JNIEnv<'j>,
             #(#arguments),*
@@ -252,7 +252,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
             let name = &func.name;
             let jni_sig = &func.signature;
             let java_doc = format!("Implementation for the method `{name}{jni_sig}`");
-            let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
+            let rust_method_name = func.rust_method_name.for_rust_ident();
             let class_ffi_name = &func.class_ffi_name;
             let object_ffi_name = &func.object_ffi_name;
             let class_or_this = if func.is_static {
@@ -270,7 +270,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
 
             quote! {
                 #[doc = #java_doc]
-                fn #fn_ffi_name(
+                fn #rust_method_name(
                     &self,
                     #class_or_this,
                     #(#arguments),*
@@ -312,7 +312,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                     }
                 })
                 .collect::<Vec<_>>();
-            let fn_ffi_name = func.fn_ffi_name.for_rust_ident();
+            let rust_method_name = func.rust_method_name.for_rust_ident();
             let call_class_or_this = if func.is_static {
                 format_ident!("class")
             } else {
@@ -340,7 +340,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
 
                     #(#args_to_rust)*
 
-                    let result = myself.#fn_ffi_name (
+                    let result = myself.#rust_method_name (
                         #call_class_or_this,
                         #(#args_call),*
                     );
@@ -406,13 +406,14 @@ pub(crate) struct ClassFfi {
     pub(crate) functions: Vec<Function>,
 }
 
+#[allow(dead_code)]
 pub(crate) struct Function {
     pub(crate) name: String,
     pub(crate) object_java_desc: JavaDesc,
     pub(crate) fn_export_ffi_name: ClassAndFuncAbi,
     pub(crate) class_ffi_name: RustTypeName,
     pub(crate) object_ffi_name: RustTypeName,
-    pub(crate) fn_ffi_name: FuncAbi,
+    pub(crate) rust_method_name: FuncAbi,
     pub(crate) signature: JavaDesc,
     pub(crate) is_static: bool,
     pub(crate) is_native: bool,
@@ -722,6 +723,11 @@ impl FuncAbi {
 
     fn for_rust_ident(&self) -> Ident {
         make_ident(&self.0.0.to_snake_case())
+    }
+
+    /// Does not perform a conversion on the name, for example, this is already in the form desired (no escapes will be performed)
+    pub(crate) fn from_raw(s: String) -> Self {
+        Self(JniAbi(s))
     }
 }
 
