@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::fmt;
+use std::{fmt, collections::{HashSet, BTreeSet}};
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
 use enum_as_inner::EnumAsInner;
@@ -240,6 +240,57 @@ fn generate_struct(obj: &Object) -> TokenStream {
     }
 }
 
+
+/// Takes a set of exceptions to produce a type to represent the name
+fn exception_name_from_set(exceptions: &BTreeSet<JavaDesc>) -> Ident {
+    let mut name = String::new();
+    for ex in exceptions {
+        name.push_str(ex.class_name());
+    }
+    
+    make_ident(&name)
+}
+
+fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStream {
+    let mut tokens = TokenStream::new();
+
+    // First generate all the Exception types that wrap the Java Exceptions
+    let exception_types = exception_sets.iter().flat_map(|s| s.iter()).collect::<HashSet<_>>();
+    for exception in exception_types {
+        let ex_ident = make_ident(exception.escape_for_extern_fn().to_upper_camel_case().as_str());
+
+        tokens.extend(quote!{
+            pub struct #ex_ident;
+
+            impl #ex_ident {
+                fn throw<'j, S: Into<JNIString>>(env: JNIEnv<'j>, msg: S) -> Result<(), jaffi_support::jni::errors::Error> {
+                    env.throw_new("#exception", msg)
+                }
+            }
+        });
+    } 
+
+    // Now Generate the return type name for the combined exceptions
+    for exception_set in &exception_sets {
+        let exception = exception_name_from_set(exception_set);
+        // the enum variants
+        let ex_variants = exception_sets
+            .iter()
+            .flat_map(|s| s.iter())
+            .map(|d| make_ident(d.class_name()))
+            .map(|i| quote!{ #i(#i)} )
+            .collect::<Vec<_>>();
+
+        tokens.extend(quote!{
+            pub enum #exception {
+                #(#ex_variants),*
+            }
+        })
+    }
+
+    tokens
+}
+
 fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
     let trait_impl = make_ident(&class_ffi.trait_impl);
     let trait_name = make_ident(&class_ffi.trait_name);
@@ -267,6 +318,13 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                 .map(|(name, rs_ty)| quote! { #name: #rs_ty })
                 .collect::<Vec<_>>();
             let rs_result = &func.rs_result;
+
+            let rs_result = if !func.exceptions.is_empty() {
+                let exception_name =  exception_name_from_set(&func.exceptions);
+                quote!{ Result<#rs_result, #exception_name> }
+            } else {
+                quote!{ #rs_result }
+            };
 
             quote! {
                 #[doc = #java_doc]
@@ -351,12 +409,23 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
         })
         .collect::<TokenStream>();
 
+    // let exception_sets = class_ffi.functions.iter().map(|f| &f.exceptions).collect::<HashSet<_>>().into_iter().map(exception_name_from_set).map(|i| quote!{ #i }).collect::<Vec<_>>();
+    // let trait_exception_type = if !exception_sets.is_empty() { 
+    //     quote!{
+    //         type Error: #(Into<#exception_sets>)+*; 
+    //     }
+    // } else {
+    //     quote!{}
+    // };
+
     quote! {
         // This is the trait developers must implement
         use super::#trait_impl;
 
         #[doc = #doc_str]
         pub trait #trait_name<'j> {
+            //#trait_exception_type
+
             /// Costruct this type from the Java object
             ///
             /// Implementations should consider storing both values as types on the implementation object
@@ -369,7 +438,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
     }
 }
 
-pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFfi>) -> TokenStream {
+pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFfi>, exceptions: HashSet<BTreeSet<JavaDesc>>) -> TokenStream {
     let header = quote! {
         use jaffi_support::{
             FromJavaToRust,
@@ -390,8 +459,12 @@ pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFf
         .map(generate_class_ffi)
         .collect::<TokenStream>();
 
+    let exceptions = generate_exceptions(exceptions);
+
     quote! {
         #header
+
+        #exceptions
 
         #objects
 
@@ -421,7 +494,7 @@ pub(crate) struct Function {
     pub(crate) arguments: Vec<Arg>,
     pub(crate) result: RustTypeName,
     pub(crate) rs_result: RustTypeName,
-    pub(crate) exceptions: Vec<JavaDesc>,
+    pub(crate) exceptions: BTreeSet<JavaDesc>,
 }
 
 pub(crate) struct Arg {
@@ -842,7 +915,7 @@ impl fmt::Display for ClassAndFuncAbi {
 }
 
 /// Descriptor in java, like `java.lang.String` or `(Ljava.lang.String;)J`
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct JavaDesc(String);
 
 impl JavaDesc {
@@ -852,6 +925,11 @@ impl JavaDesc {
 
     pub(crate) fn escape_for_extern_fn(&self) -> String {
         self.0.replace('/', "_")
+    }
+
+    /// Returns the final Class name, e.g. returns `String` for `java/lang/String`
+    pub(crate) fn class_name(&self) -> &str {
+        self.0.split('/').last().expect("split should at least return empty string")
     }
 }
 

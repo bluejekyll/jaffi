@@ -28,7 +28,7 @@ pub use error::{Error, ErrorKind};
 
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -107,7 +107,21 @@ impl<'a> Jaffi<'a> {
             .join("generated_jaffi")
             .with_extension("rs");
 
-        let ffi_tokens = template::generate_java_ffi(objects, class_ffis);
+        // collect all the exception types
+        let exceptions = objects
+            .iter()
+            .flat_map(|o| o.methods.iter())
+            .map(|f| &f.exceptions)
+            .chain(
+                class_ffis
+                    .iter()
+                    .flat_map(|o| o.functions.iter())
+                    .map(|f| &f.exceptions),
+            )
+            .cloned()
+            .collect();
+
+        let ffi_tokens = template::generate_java_ffi(objects, class_ffis, exceptions);
         let rendered = ffi_tokens.to_string();
 
         let mut rust_file = File::create(rust_file)?;
@@ -429,10 +443,10 @@ impl<'a> Jaffi<'a> {
                 })
                 .flatten()
                 .collect();
-            let exceptions: Vec<JavaDesc> = exceptions
+            let exceptions = exceptions
                 .into_iter()
                 .map(|s| JavaDesc::from(s.to_string()))
-                .collect();
+                .collect::<BTreeSet<_>>();
 
             let function = Function {
                 name: method.name.to_string(),
