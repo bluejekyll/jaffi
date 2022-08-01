@@ -1,4 +1,4 @@
-use jaffi_support::jni::JNIEnv;
+use jaffi_support::{jni::JNIEnv, Error};
 use net_bluejekyll::NetBluejekyllNativeStrings;
 
 use crate::net_bluejekyll::*;
@@ -316,8 +316,24 @@ impl<'j> ExceptionsRs<'j> for ExceptionsRsImpl<'j> {
         Self { env }
     }
 
-    fn throws_something(&self, this: NetBluejekyllExceptions<'j>) {}
+    fn throws_something(
+        &self,
+        this: NetBluejekyllExceptions<'j>,
+    ) -> Result<(), Error<SomethingExceptionErr>> {
+        Err(Error::new(
+            SomethingExceptionErr::SomethingException(SomethingException),
+            "Test Message",
+        ))
+    }
 
-    fn throws_something_ljava_lang_string_2(&self, this: NetBluejekyllExceptions<'j>, msg: String) {
+    fn throws_something_ljava_lang_string_2(
+        &self,
+        this: NetBluejekyllExceptions<'j>,
+        msg: String,
+    ) -> Result<(), Error<SomethingExceptionErr>> {
+        Err(Error::new(
+            SomethingExceptionErr::SomethingException(SomethingException),
+            msg,
+        ))
     }
 }

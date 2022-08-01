@@ -8,17 +8,20 @@
 use std::{borrow::Cow, ops::Deref};
 
 pub mod arrays;
+mod exceptions;
 
+pub use exceptions::{Error, Exception};
 pub use jni;
+
 use jni::{
     objects::{JObject, JString, JValue},
     strings::JNIString,
     JNIEnv,
 };
 
-pub trait JavaPrimitive {}
+pub trait JavaPrimitive: Default {}
 
-impl<'j, T> JavaPrimitive for T where T: Deref<Target = JObject<'j>> {}
+impl<'j, T> JavaPrimitive for T where T: Deref<Target = JObject<'j>> + Default {}
 
 pub trait FromJavaToRust<'j, J: 'j> {
     fn java_to_rust(java: J, _env: JNIEnv<'j>) -> Self;
@@ -29,7 +32,7 @@ pub trait FromRustToJava<'j, R> {
 }
 
 /// Byte
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaByte(pub jni::sys::jbyte);
 
@@ -49,7 +52,7 @@ impl FromRustToJava<'_, u8> for JavaByte {
 ///
 /// Chars are generally going to be bad from Rust to Java, always best to just use Strings.
 /// jchar is just a u16, which can't encode the same space as Rust...
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaChar(pub jni::sys::jchar);
 
@@ -67,7 +70,7 @@ impl FromRustToJava<'_, char> for JavaChar {
 }
 
 /// Double
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaDouble(pub jni::sys::jdouble);
 
@@ -84,7 +87,7 @@ impl FromRustToJava<'_, f64> for JavaDouble {
 }
 
 /// Float
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaFloat(pub jni::sys::jfloat);
 
@@ -101,7 +104,7 @@ impl FromRustToJava<'_, f32> for JavaFloat {
 }
 
 /// Int
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaInt(pub jni::sys::jint);
 
@@ -118,7 +121,7 @@ impl FromRustToJava<'_, i32> for JavaInt {
 }
 
 /// Long
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaLong(pub jni::sys::jlong);
 
@@ -135,7 +138,7 @@ impl FromRustToJava<'_, i64> for JavaLong {
 }
 
 /// Short
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaShort(pub jni::sys::jshort);
 
@@ -152,7 +155,7 @@ impl FromRustToJava<'_, i16> for JavaShort {
 }
 
 /// Boolean
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaBoolean(pub jni::sys::jboolean);
 
@@ -173,7 +176,7 @@ impl FromRustToJava<'_, bool> for JavaBoolean {
 }
 
 /// Void
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(transparent)]
 pub struct JavaVoid(());
 

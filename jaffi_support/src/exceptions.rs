@@ -5,9 +5,32 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use jni::objects::JNIString;
+use std::{borrow::Cow, marker::PhantomData};
 
-pub struct Exception<'j, 'c: 'j, E: Desc<'a, JClass<'c>>, S: 'j + Into<JNIString>> {
-    exception: E,
-    msg: S,
+use jni::{strings::JNIString, JNIEnv};
+
+pub trait Exception: 'static {
+    #[track_caller]
+    fn throw<'j, S: Into<JNIString>>(
+        &self,
+        env: JNIEnv<'j>,
+        msg: S,
+    ) -> Result<(), jni::errors::Error>;
+}
+
+pub struct Error<E: Exception> {
+    kind: E,
+    msg: Cow<'static, str>,
+}
+
+impl<E: Exception> Error<E> {
+    pub fn new<S: Into<Cow<'static, str>>>(kind: E, msg: S) -> Self {
+        let msg = msg.into();
+        Self { kind, msg }
+    }
+
+    #[track_caller]
+    pub fn throw<'j>(&self, env: JNIEnv<'j>) -> Result<(), jni::errors::Error> {
+        <E as Exception>::throw(&self.kind, env, &self.msg)
+    }
 }
