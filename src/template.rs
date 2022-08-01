@@ -248,6 +248,8 @@ fn exception_name_from_set(exceptions: &BTreeSet<JavaDesc>) -> Ident {
         name.push_str(ex.class_name());
     }
     
+    name.push_str("Err");
+
     make_ident(&name)
 }
 
@@ -257,14 +259,16 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
     // First generate all the Exception types that wrap the Java Exceptions
     let exception_types = exception_sets.iter().flat_map(|s| s.iter()).collect::<HashSet<_>>();
     for exception in exception_types {
-        let ex_ident = make_ident(exception.escape_for_extern_fn().to_upper_camel_case().as_str());
+        let ex_ident = make_ident(exception.class_name());
+        let ex_class_name = format!("{exception}");
 
         tokens.extend(quote!{
             pub struct #ex_ident;
 
-            impl #ex_ident {
-                fn throw<'j, S: Into<JNIString>>(env: JNIEnv<'j>, msg: S) -> Result<(), jaffi_support::jni::errors::Error> {
-                    env.throw_new("#exception", msg)
+            impl jaffi_support::Exception for #ex_ident {
+                #[track_caller]
+                fn throw<'j, S: Into<JNIString>>(&self, env: JNIEnv<'j>, msg: S) -> Result<(), JniError> {
+                    env.throw_new(#ex_class_name, msg)
                 }
             }
         });
@@ -280,10 +284,25 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
             .map(|d| make_ident(d.class_name()))
             .map(|i| quote!{ #i(#i)} )
             .collect::<Vec<_>>();
+        let ex_variant_names = exception_sets
+            .iter()
+            .flat_map(|s| s.iter())
+            .map(|d| make_ident(d.class_name()))
+            .map(|i| quote!{ #i } )
+            .collect::<Vec<_>>();
 
         tokens.extend(quote!{
             pub enum #exception {
                 #(#ex_variants),*
+            }
+
+            impl jaffi_support::Exception for #exception {
+                #[track_caller]
+                fn throw<'j, S: Into<JNIString>>(&self, env: JNIEnv<'j>, msg: S) -> Result<(), JniError> {
+                    match self {
+                        #(Self::#ex_variant_names(ex))|* => ex.throw(env, msg),
+                    }
+                }
             }
         })
     }
@@ -321,7 +340,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
 
             let rs_result = if !func.exceptions.is_empty() {
                 let exception_name =  exception_name_from_set(&func.exceptions);
-                quote!{ Result<#rs_result, #exception_name> }
+                quote!{ Result<#rs_result, jaffi_support::Error<#exception_name>> }
             } else {
                 quote!{ #rs_result }
             };
@@ -383,6 +402,20 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                 .map(|name| quote! {#name})
                 .collect::<Vec<_>>();
 
+            let handle_err = if !func.exceptions.is_empty() {
+                quote!{
+                    let result = match result {
+                        Err(e) => { 
+                            e.throw(env).expect("failed to throw exception");
+                            return Default::default();
+                        }
+                        Ok(r) => r,
+                    };
+                }
+            } else {
+                quote!{}
+            };
+
             quote! {
                 #[doc = #fn_doc]
                 ///
@@ -402,6 +435,8 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                         #call_class_or_this,
                         #(#args_call),*
                     );
+
+                    #handle_err
 
                     <#result>::rust_to_java(result, env)
                 }
@@ -448,6 +483,8 @@ pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFf
             jni::{
                 JNIEnv,
                 objects::{JClass, JObject, JValue},
+                strings::JNIString,
+                errors::Error as JniError,
                 self,
             }
         };

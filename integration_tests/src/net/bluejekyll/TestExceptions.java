@@ -11,18 +11,18 @@ public class TestExceptions {
     public static void testThrowsSomething() {
         Exceptions exceptions = new Exceptions();
 
-        boolean caught;
+        String caught;
         try {
             exceptions.throwsSomething();
-            caught = false;
+            caught = null;
         } catch (SomethingException e) {
-            caught = true;
+            caught = e.getMessage();
         }
 
-        if (!caught) {
+        if (caught == null) {
             throw new RuntimeException("no exception caught");
         } else {
-            System.out.println("caught exception");
+            System.out.println("caught exception: " + caught);
         }
     }
     
