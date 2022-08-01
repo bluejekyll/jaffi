@@ -10,7 +10,7 @@ use std::{borrow::Cow, ops::Deref};
 pub mod arrays;
 mod exceptions;
 
-pub use exceptions::{Error, Exception};
+pub use exceptions::{Error, Throwable};
 pub use jni;
 
 use jni::{
