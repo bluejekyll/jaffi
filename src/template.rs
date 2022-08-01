@@ -265,7 +265,7 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
         tokens.extend(quote!{
             pub struct #ex_ident;
 
-            impl jaffi_support::Exception for #ex_ident {
+            impl jaffi_support::Throwable for #ex_ident {
                 #[track_caller]
                 fn throw<'j, S: Into<JNIString>>(&self, env: JNIEnv<'j>, msg: S) -> Result<(), JniError> {
                     env.throw_new(#ex_class_name, msg)
@@ -296,7 +296,7 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
                 #(#ex_variants),*
             }
 
-            impl jaffi_support::Exception for #exception {
+            impl jaffi_support::Throwable for #exception {
                 #[track_caller]
                 fn throw<'j, S: Into<JNIString>>(&self, env: JNIEnv<'j>, msg: S) -> Result<(), JniError> {
                     match self {

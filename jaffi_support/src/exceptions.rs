@@ -9,7 +9,7 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use jni::{strings::JNIString, JNIEnv};
 
-pub trait Exception: 'static {
+pub trait Throwable: 'static {
     #[track_caller]
     fn throw<'j, S: Into<JNIString>>(
         &self,
@@ -18,12 +18,12 @@ pub trait Exception: 'static {
     ) -> Result<(), jni::errors::Error>;
 }
 
-pub struct Error<E: Exception> {
+pub struct Error<E: Throwable> {
     kind: E,
     msg: Cow<'static, str>,
 }
 
-impl<E: Exception> Error<E> {
+impl<E: Throwable> Error<E> {
     pub fn new<S: Into<Cow<'static, str>>>(kind: E, msg: S) -> Self {
         let msg = msg.into();
         Self { kind, msg }
@@ -31,6 +31,6 @@ impl<E: Exception> Error<E> {
 
     #[track_caller]
     pub fn throw<'j>(&self, env: JNIEnv<'j>) -> Result<(), jni::errors::Error> {
-        <E as Exception>::throw(&self.kind, env, &self.msg)
+        <E as Throwable>::throw(&self.kind, env, &self.msg)
     }
 }
