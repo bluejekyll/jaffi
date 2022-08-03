@@ -14,10 +14,38 @@ pub use exceptions::{Error, Throwable};
 pub use jni;
 
 use jni::{
-    objects::{JObject, JString, JValue},
-    strings::JNIString,
+    objects::{JClass, JObject, JString, JValue},
+    strings::{JNIString, JavaStr},
     JNIEnv,
 };
+
+pub(crate) fn get_class_name<'j>(
+    env: JNIEnv<'j>,
+    clazz: JClass<'j>,
+) -> Result<String, jni::errors::Error> {
+    let name = env.call_method(clazz, "getCanonicalName", "()Ljava/lang/String;", &[])?;
+    let name = name.l()?;
+    let name = JString::from(name);
+    let name = env.get_string(name)?;
+    Ok(Cow::from(&name).to_string())
+}
+
+fn call_string_method<'j, 'l: 'j>(
+    env: &'l JNIEnv<'j>,
+    obj: JObject<'j>,
+    method: &str,
+) -> Result<Option<JavaStr<'j, 'l>>, jni::errors::Error> {
+    let jstring = env
+        .call_method(*obj, method, "()Ljava/lang/String;", &[])?
+        .l()
+        .map(JString::from)?;
+
+    if jstring.is_null() {
+        return Ok(None);
+    }
+
+    env.get_string(jstring).map(Some)
+}
 
 pub trait JavaPrimitive: Default {}
 
