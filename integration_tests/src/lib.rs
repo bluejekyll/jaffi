@@ -336,4 +336,12 @@ impl<'j> ExceptionsRs<'j> for ExceptionsRsImpl<'j> {
             msg,
         ))
     }
+
+    fn catches_something(
+        &self,
+        this: net_bluejekyll::NetBluejekyllExceptions<'j>,
+    ) -> net_bluejekyll::NetBluejekyllSomethingException<'j> {
+        this.i_always_throw(self.env);
+        todo!();
+    }
 }
