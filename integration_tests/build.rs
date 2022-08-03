@@ -104,15 +104,36 @@ fn main() -> Result<(), Box<dyn Error>> {
     ];
     let classes_to_wrap = vec![Cow::from("net.bluejekyll.ParentClass")];
     let output_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let output_file = Cow::from(Path::new("generated_jaffi.rs"));
 
     let jaffi = Jaffi::builder()
+        .output_dir(&output_dir)
+        .output_filename(&output_file)
         .native_classes(classes)
         .classes_to_wrap(classes_to_wrap)
         .classpath(vec![Cow::from(class_path)])
-        .output_dir(Some(Cow::from(output_dir)))
         .build();
 
     jaffi.generate()?;
+
+    // let's format the file to help with debugging build issues
+    let jaffi_file = output_dir.join(output_file);
+
+    let mut cmd = Command::new("rustfmt");
+    cmd.arg("--emit").arg("files").arg(jaffi_file);
+
+    eprintln!("cargo fmt: {cmd:?}");
+    let output = cmd.output();
+
+    match output {
+        Ok(output) => {
+            std::io::stderr().write_all(&output.stdout).unwrap();
+            std::io::stderr().write_all(&output.stderr).unwrap();
+        }
+        Err(e) => {
+            eprintln!("cargo fmt failed to execute: {e}");
+        }
+    }
 
     Ok(())
 }

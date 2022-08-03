@@ -69,12 +69,16 @@ pub struct Exception<'j, T: Throwable> {
 impl<'j, T: Throwable> Exception<'j, T> {
     /// Throw a new exception.
     #[track_caller]
-    fn throw<S: Into<JNIString>>(&self, env: JNIEnv<'_>, msg: S) -> Result<(), jni::errors::Error> {
+    pub fn throw<S: Into<JNIString>>(
+        &self,
+        env: JNIEnv<'_>,
+        msg: S,
+    ) -> Result<(), jni::errors::Error> {
         self.throwable.throw(env, msg)
     }
 
     /// Tests the exception against this type to see if it's a correct exception
-    fn catch(env: JNIEnv<'j>, exception: JThrowable<'j>) -> Result<Self, JThrowable<'j>> {
+    pub fn catch(env: JNIEnv<'j>, exception: JThrowable<'j>) -> Result<Self, JThrowable<'j>> {
         let throwable = T::catch(env, exception)?;
 
         Ok(Self {

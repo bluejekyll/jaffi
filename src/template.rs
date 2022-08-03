@@ -5,16 +5,19 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{fmt, collections::{HashSet, BTreeSet}};
+use std::{
+    collections::{BTreeSet, HashSet},
+    fmt,
+};
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
 use enum_as_inner::EnumAsInner;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use jaffi_support::{
     JavaBoolean, JavaByte, JavaChar, JavaDouble, JavaFloat, JavaInt, JavaLong, JavaShort, JavaVoid,
 };
-use proc_macro2::{TokenStream, Ident};
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
-use heck::{ToUpperCamelCase, ToSnakeCase};
 
 use crate::ident::make_ident;
 
@@ -39,7 +42,14 @@ fn generate_function(func: &Function) -> TokenStream {
         .map(|arg| (&arg.name, &arg.rs_ty))
         .map(|(name, rs_ty)| quote! { #name: #rs_ty })
         .collect::<Vec<_>>();
+    let exception_name = exception_name_from_set(&func.exceptions);
+    let return_err = quote!{ Exception::<#exception_name> };
     let rs_result = &func.rs_result;
+    let rs_result_sig = if !func.exceptions.is_empty() {
+        quote!{ Result<#rs_result, #return_err> }
+    } else {
+        quote!{ #rs_result }
+    };
     let result = &func.result;
     let to_jvalue_args= func
         .arguments
@@ -54,38 +64,57 @@ fn generate_function(func: &Function) -> TokenStream {
     let name = &func.name;
     let from_java_value =
         quote! { <#rs_result as FromJavaValue<#result>>::from_jvalue(env, jvalue) };
+    let exception_handler = if !func.exceptions.is_empty() { 
+        quote!{
+            Err(jni::errors::Error::JavaException) => {
+                let throwable = match env.exception_occurred() {
+                    Ok(throwable) => throwable,
+                    Err(e) => panic!("error exception_occurred, {e}"),
+                };
+
+                match #return_err::catch(env, throwable) {
+                    Ok(exception) => {
+                        env.exception_clear().expect("error exception_clear");
+                        return Err(exception);
+                    }
+                    Err(e) => panic!("uncaught exception, {:#x}", e.into_inner() as usize),
+                }
+            }
+        }
+    } else {
+        quote!{}
+    };
+    let ok_return = if !func.exceptions.is_empty() {
+        quote!{ let rust_value = Ok(rust_value); }
+    } else {
+        quote!{}
+    };
     let method_call = if func.is_constructor {
         quote! {
-            let jobject = env.new_object(
+            env.new_object(
                 #object_java_desc,
                 #signature,
                 args
-            ).expect("error calling Java constructor");
-            <#rs_result  as From<JObject>>::from(jobject)
+            )
+            .map(JValue::from)
         }
     } else if func.is_static {
         quote! {
-            match env.call_static_method(
+            env.call_static_method(
                 #object_java_desc,
                 #name,
                 #signature,
                 args
-            ) {
-                Ok(jvalue) => #from_java_value,
-                Err(e) => panic!("error call_static_method, {}", e),
-            }
+            )
         }
     } else {
         quote! {
-            match env.call_method(
+            env.call_method(
                 self.0,
                 #name,
                 #signature,
                 args
-            ) {
-                Ok(jvalue) => #from_java_value,
-                Err(e) => panic!("error call_method, {}", e),
-            }
+            )
         }
     };
 
@@ -99,25 +128,40 @@ fn generate_function(func: &Function) -> TokenStream {
             #amp_self
             env: JNIEnv<'j>,
             #(#arguments),*
-        ) -> #rs_result {
+        ) -> #rs_result_sig {
             let args: &[JValue<'j>] = &[
                 #(#to_jvalue_args),*
             ];
 
-            let rust_value = {
+            let rust_value: Result<JValue, _> = {
                 #method_call
             };
 
-            rust_value
+            let rust_value = match rust_value {
+                Ok(jvalue) => #from_java_value,
+                #exception_handler
+                Err(e) => {
+                    panic!("error call_method, {e}")
+                },
+            };
+
+            #ok_return
+            rust_value 
         }
     }
 }
 
 fn generate_struct(obj: &Object) -> TokenStream {
     let class_name = &obj.class_name;
-    let static_java_doc = format!("Wrapper for the static methods of Java class `{}`", obj.java_name);
+    let static_java_doc = format!(
+        "Wrapper for the static methods of Java class `{}`",
+        obj.java_name
+    );
     let obj_name = &obj.obj_name;
-    let java_doc = format!("Wrapper for the public methods of Java class `{}`", obj.java_name);
+    let java_doc = format!(
+        "Wrapper for the public methods of Java class `{}`",
+        obj.java_name
+    );
     let static_trait_name = &obj.static_trait_name;
     let java_name = obj.java_name.as_str();
 
@@ -240,14 +284,13 @@ fn generate_struct(obj: &Object) -> TokenStream {
     }
 }
 
-
 /// Takes a set of exceptions to produce a type to represent the name
 fn exception_name_from_set(exceptions: &BTreeSet<JavaDesc>) -> Ident {
     let mut name = String::new();
     for ex in exceptions {
         name.push_str(ex.class_name());
     }
-    
+
     name.push_str("Err");
 
     make_ident(&name)
@@ -257,7 +300,10 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
     let mut tokens = TokenStream::new();
 
     // First generate all the Exception types that wrap the Java Exceptions
-    let exception_types = exception_sets.iter().flat_map(|s| s.iter()).collect::<HashSet<_>>();
+    let exception_types = exception_sets
+        .iter()
+        .flat_map(|s| s.iter())
+        .collect::<HashSet<_>>();
     for exception in exception_types {
         let ex_ident = make_ident(exception.class_name());
         let ex_class_name = format!("{exception}");
@@ -272,7 +318,7 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
                 }
             }
         });
-    } 
+    }
 
     // Now Generate the return type name for the combined exceptions
     for exception_set in &exception_sets {
@@ -282,13 +328,13 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
             .iter()
             .flat_map(|s| s.iter())
             .map(|d| make_ident(d.class_name()))
-            .map(|i| quote!{ #i(#i)} )
+            .map(|i| quote! { #i(#i)})
             .collect::<Vec<_>>();
         let ex_variant_names = exception_sets
             .iter()
             .flat_map(|s| s.iter())
             .map(|d| make_ident(d.class_name()))
-            .map(|i| quote!{ #i } )
+            .map(|i| quote! { #i })
             .collect::<Vec<_>>();
 
         tokens.extend(quote!{
@@ -313,7 +359,10 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
 fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
     let trait_impl = make_ident(&class_ffi.trait_impl);
     let trait_name = make_ident(&class_ffi.trait_name);
-    let doc_str = format!("Implement this with `super::{trait_impl}` to support native methods from `{}`", class_ffi.class_name);
+    let doc_str = format!(
+        "Implement this with `super::{trait_impl}` to support native methods from `{}`",
+        class_ffi.class_name
+    );
 
     let trait_functions = class_ffi
         .functions
@@ -339,10 +388,10 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
             let rs_result = &func.rs_result;
 
             let rs_result = if !func.exceptions.is_empty() {
-                let exception_name =  exception_name_from_set(&func.exceptions);
-                quote!{ Result<#rs_result, jaffi_support::Error<#exception_name>> }
+                let exception_name = exception_name_from_set(&func.exceptions);
+                quote! { Result<#rs_result, jaffi_support::Error<#exception_name>> }
             } else {
-                quote!{ #rs_result }
+                quote! { #rs_result }
             };
 
             quote! {
@@ -403,9 +452,9 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                 .collect::<Vec<_>>();
 
             let handle_err = if !func.exceptions.is_empty() {
-                quote!{
+                quote! {
                     let result = match result {
-                        Err(e) => { 
+                        Err(e) => {
                             e.throw(env).expect("failed to throw exception");
                             return Default::default();
                         }
@@ -413,7 +462,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                     };
                 }
             } else {
-                quote!{}
+                quote! {}
             };
 
             quote! {
@@ -445,9 +494,9 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
         .collect::<TokenStream>();
 
     // let exception_sets = class_ffi.functions.iter().map(|f| &f.exceptions).collect::<HashSet<_>>().into_iter().map(exception_name_from_set).map(|i| quote!{ #i }).collect::<Vec<_>>();
-    // let trait_exception_type = if !exception_sets.is_empty() { 
+    // let trait_exception_type = if !exception_sets.is_empty() {
     //     quote!{
-    //         type Error: #(Into<#exception_sets>)+*; 
+    //         type Error: #(Into<#exception_sets>)+*;
     //     }
     // } else {
     //     quote!{}
@@ -473,13 +522,19 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
     }
 }
 
-pub(crate) fn generate_java_ffi(objects: Vec<Object>, other_classes: Vec<ClassFfi>, exceptions: HashSet<BTreeSet<JavaDesc>>) -> TokenStream {
+pub(crate) fn generate_java_ffi(
+    objects: Vec<Object>,
+    other_classes: Vec<ClassFfi>,
+    exceptions: HashSet<BTreeSet<JavaDesc>>,
+) -> TokenStream {
     let header = quote! {
         use jaffi_support::{
+            Exception,
             FromJavaToRust,
             FromRustToJava,
             FromJavaValue,
             IntoJavaValue,
+            Throwable,
             jni::{
                 JNIEnv,
                 objects::{JClass, JObject, JValue},
@@ -745,7 +800,9 @@ impl ObjectType {
             Self::JObject => "jni::objects::JObject<'j>".into(),
             Self::JString => "jni::objects::JString<'j>".into(),
             Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
-            Self::Object(ref obj) => RustTypeName::from(obj.escape_for_extern_fn().to_upper_camel_case()).append("<'j>"),
+            Self::Object(ref obj) => {
+                RustTypeName::from(obj.escape_for_extern_fn().to_upper_camel_case()).append("<'j>")
+            }
         }
     }
 
@@ -768,7 +825,9 @@ impl ObjectType {
             Self::JObject => "jni::objects::JObject<'j>".into(),
             Self::JString => "String".into(),
             Self::JThrowable => "jni::objects::JThrowable<'j>".into(),
-            Self::Object(ref obj) => RustTypeName::from(obj.0.replace('/', "_").to_upper_camel_case()).append("<'j>"),
+            Self::Object(ref obj) => {
+                RustTypeName::from(obj.0.replace('/', "_").to_upper_camel_case()).append("<'j>")
+            }
         }
     }
 }
@@ -833,7 +892,7 @@ impl FuncAbi {
     }
 
     fn for_rust_ident(&self) -> Ident {
-        make_ident(&self.0.0.to_snake_case())
+        make_ident(&self.0 .0.to_snake_case())
     }
 
     /// Does not perform a conversion on the name, for example, this is already in the form desired (no escapes will be performed)
@@ -966,7 +1025,10 @@ impl JavaDesc {
 
     /// Returns the final Class name, e.g. returns `String` for `java/lang/String`
     pub(crate) fn class_name(&self) -> &str {
-        self.0.split('/').last().expect("split should at least return empty string")
+        self.0
+            .split('/')
+            .last()
+            .expect("split should at least return empty string")
     }
 }
 
@@ -990,11 +1052,17 @@ impl fmt::Display for JavaDesc {
 
 /// Descriptor in java, like `java.lang.String` or `(Ljava.lang.String;)J`
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
-pub(crate) struct RustTypeName{ path: Vec<Ident>, ty: Option<Ident>, lifetime: bool }
+pub(crate) struct RustTypeName {
+    path: Vec<Ident>,
+    ty: Option<Ident>,
+    lifetime: bool,
+}
 
 fn path_from_name(name: &str) -> (Vec<Ident>, &str) {
     let mut iter = name.rsplit("::");
-    let name = iter.next().expect("even empty strings should return the empty string");
+    let name = iter
+        .next()
+        .expect("even empty strings should return the empty string");
     let path = iter.map(make_ident).collect();
 
     (path, name)
@@ -1010,10 +1078,18 @@ impl RustTypeName {
         };
 
         if let Some(ty) = &self.ty {
-            Self{ path, ty: Some(format_ident!("{}{}", ty, s)), lifetime }
-        } else { 
-            Self { path: Vec::new(), ty: None, lifetime: false } 
-        }  
+            Self {
+                path,
+                ty: Some(format_ident!("{}{}", ty, s)),
+                lifetime,
+            }
+        } else {
+            Self {
+                path: Vec::new(),
+                ty: None,
+                lifetime: false,
+            }
+        }
     }
 
     pub(crate) fn prepend(&self, s: &str) -> Self {
@@ -1025,14 +1101,26 @@ impl RustTypeName {
         };
 
         if let Some(ty) = &self.ty {
-            Self{ path, ty: Some(format_ident!("{}{}", s, ty)), lifetime }
+            Self {
+                path,
+                ty: Some(format_ident!("{}{}", s, ty)),
+                lifetime,
+            }
         } else {
-            Self { path: Vec::new(), ty: None, lifetime: false } 
+            Self {
+                path: Vec::new(),
+                ty: None,
+                lifetime: false,
+            }
         }
     }
 
     pub(crate) fn no_lifetime(&self) -> Self {
-        Self { path: self.path.clone(), ty: self.ty.clone(), lifetime: false }
+        Self {
+            path: self.path.clone(),
+            ty: self.ty.clone(),
+            lifetime: false,
+        }
     }
 }
 
@@ -1058,10 +1146,18 @@ impl From<&str> for RustTypeName {
             (s, false)
         };
 
-        if s == "()" { 
-            Self { path: Vec::new(), ty: None, lifetime: false } 
+        if s == "()" {
+            Self {
+                path: Vec::new(),
+                ty: None,
+                lifetime: false,
+            }
         } else {
-            Self{ path, ty: Some(make_ident(s)), lifetime }
+            Self {
+                path,
+                ty: Some(make_ident(s)),
+                lifetime,
+            }
         }
     }
 }
@@ -1080,10 +1176,14 @@ impl ToTokens for RustTypeName {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         if let Some(ty) = &self.ty {
             let name = ty;
-            let lifetime = if self.lifetime { quote!{<'j>} } else { quote!{} };
+            let lifetime = if self.lifetime {
+                quote! {<'j>}
+            } else {
+                quote! {}
+            };
 
             for i in self.path.iter().rev() {
-                tokens.extend(quote!{ #i:: });
+                tokens.extend(quote! { #i:: });
             }
 
             tokens.extend(quote! { #name #lifetime });

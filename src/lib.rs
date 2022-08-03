@@ -49,12 +49,16 @@ pub use jaffi_support;
 /// A utility for generating Rust FFI implementations from Java class files that contain `native` functions.
 #[derive(TypedBuilder)]
 pub struct Jaffi<'a> {
-    /// Used like ClassPath in Java, defaults to `.` if empty
-    classpath: Vec<Cow<'a, Path>>,
     /// generated source target path for the Rust, probably something in `target/`, defaults to `.`
     ///
     /// Implementation files will be the java class name converted to a rust module name with `_` replacing the `.`
-    output_dir: Option<Cow<'a, Path>>,
+    #[builder(default=Path::new("."))]
+    output_dir: &'a Path,
+    /// Name of the target jaffi file, defaults to "generated_jaffi.rs"
+    #[builder(default=Path::new("generated_jaffi.rs"))]
+    output_filename: &'a Path,
+    /// Used like ClassPath in Java, defaults to `.` if empty
+    classpath: Vec<Cow<'a, Path>>,
     /// List of classes with native methods (specified as java class names, i.e. `java.lang.Object`) to generate bindings for
     native_classes: Vec<Cow<'a, str>>,
     /// List of classes that wrappers will be generated for
@@ -95,17 +99,10 @@ impl<'a> Jaffi<'a> {
         let objects = self.generate_support_types(argument_types)?;
 
         // render the file
-        let output_dir = &Cow::Borrowed(Path::new("."));
-        let output_dir = if let Some(ref dir) = self.output_dir {
-            dir
-        } else {
-            output_dir
-        };
+        let output_dir = self.output_dir;
 
         // we always generate to the same file name
-        let rust_file = PathBuf::from(output_dir.as_ref())
-            .join("generated_jaffi")
-            .with_extension("rs");
+        let rust_file = output_dir.join(&self.output_filename);
 
         // collect all the exception types
         let exceptions = objects
