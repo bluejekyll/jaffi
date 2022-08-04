@@ -1,4 +1,7 @@
-use jaffi_support::{jni::JNIEnv, Error};
+use jaffi_support::{
+    jni::{objects::JObject, JNIEnv},
+    Error,
+};
 use net_bluejekyll::NetBluejekyllNativeStrings;
 
 use crate::net_bluejekyll::*;
@@ -318,7 +321,7 @@ impl<'j> ExceptionsRs<'j> for ExceptionsRsImpl<'j> {
 
     fn throws_something(
         &self,
-        this: NetBluejekyllExceptions<'j>,
+        _this: NetBluejekyllExceptions<'j>,
     ) -> Result<(), Error<SomethingExceptionErr>> {
         Err(Error::new(
             SomethingExceptionErr::SomethingException(SomethingException),
@@ -328,7 +331,7 @@ impl<'j> ExceptionsRs<'j> for ExceptionsRsImpl<'j> {
 
     fn throws_something_ljava_lang_string_2(
         &self,
-        this: NetBluejekyllExceptions<'j>,
+        _this: NetBluejekyllExceptions<'j>,
         msg: String,
     ) -> Result<(), Error<SomethingExceptionErr>> {
         Err(Error::new(
@@ -341,7 +344,15 @@ impl<'j> ExceptionsRs<'j> for ExceptionsRsImpl<'j> {
         &self,
         this: net_bluejekyll::NetBluejekyllExceptions<'j>,
     ) -> net_bluejekyll::NetBluejekyllSomethingException<'j> {
-        this.i_always_throw(self.env);
-        todo!();
+        let ex = this
+            .i_always_throw(self.env)
+            .expect_err("error expected here");
+
+        #[allow(irrefutable_let_patterns)]
+        if let SomethingExceptionErr::SomethingException(SomethingException) = ex.throwable() {
+            net_bluejekyll::NetBluejekyllSomethingException::from(JObject::from(ex.exception()))
+        } else {
+            panic!("expected SomethingException")
+        }
     }
 }

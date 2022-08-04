@@ -20,11 +20,7 @@ pub trait Throwable: Sized {
     fn throw<S: Into<JNIString>>(&self, env: JNIEnv<'_>, msg: S) -> Result<(), jni::errors::Error>;
 
     /// Tests the exception against this type to see if it's a correct exception
-    ///
-    /// The default implementation will always return Err
-    fn catch<'j>(_env: JNIEnv<'j>, exception: JThrowable<'j>) -> Result<Self, JThrowable<'j>> {
-        Err(exception)
-    }
+    fn catch<'j>(_env: JNIEnv<'j>, exception: JThrowable<'j>) -> Result<Self, JThrowable<'j>>;
 }
 
 pub struct AnyThrowable;
@@ -64,6 +60,16 @@ pub struct Exception<'j, T: Throwable> {
     env: JNIEnv<'j>,
     exception: JThrowable<'j>,
     throwable: T,
+}
+
+impl<'j, T: Throwable + Copy> Exception<'j, T> {
+    pub fn exception(&self) -> JThrowable<'j> {
+        self.exception
+    }
+
+    pub fn throwable(&self) -> T {
+        self.throwable
+    }
 }
 
 impl<'j, T: Throwable> Exception<'j, T> {
@@ -109,9 +115,9 @@ impl<'j, T: Throwable> fmt::Display for Exception<'j, T> {
                 .map_err(|_| fmt::Error)?;
 
             if let Some(message) = message {
-                writeln!(f, "exception {}: {}", clazz, Cow::from(&message))?;
+                writeln!(f, "{ex_or_cause}: {clazz}: {}", Cow::from(&message))?;
             } else {
-                writeln!(f, "cause {}", clazz)?;
+                writeln!(f, "{ex_or_cause}: {clazz}")?;
             };
 
             let trace = self
