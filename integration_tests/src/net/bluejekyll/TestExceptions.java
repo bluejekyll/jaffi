@@ -6,6 +6,7 @@ public class TestExceptions {
         TestExceptions.testThrowsSomething();
         TestExceptions.testThrowsSomethingMsg();
         TestExceptions.testCatchesSomething();
+        TestExceptions.testPanicsAreRuntimeExceptions();
         System.out.println("<<<< " + TestExceptions.class.getName() + " tests succeeded");
     }
 
@@ -53,6 +54,30 @@ public class TestExceptions {
 
         if (!exception.getMessage().equals("iAlwaysThrow")) {
             throw new RuntimeException("no exception caught");
+        }
+    }
+
+    public static void testPanicsAreRuntimeExceptions() {
+        Exceptions exceptions = new Exceptions();
+
+        RuntimeException exception;
+        try {
+            exceptions.panicsAreRuntimeExceptions();
+            exception = null;
+        } catch (RuntimeException e) {
+            exception = e;
+        }
+
+        if (exception == null) {
+            throw new RuntimeException("no exception caught");
+        }
+
+        if (!(exception instanceof RuntimeException)) {
+            throw new RuntimeException("exception of wrong type caught: " + exception);
+        }
+
+        if (!exception.getMessage().equals("panic: Panics are safe")) {
+            throw new RuntimeException("expected msg: 'panic: Panics are safe' got: '" + exception.getMessage() + "'");
         }
     }
 }

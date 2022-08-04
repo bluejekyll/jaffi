@@ -7,6 +7,8 @@ public class Exceptions {
 
     public native SomethingException catchesSomething();
 
+    public native void panicsAreRuntimeExceptions();
+
     public void iAlwaysThrow() throws SomethingException {
         throw new SomethingException("iAlwaysThrow");
     }

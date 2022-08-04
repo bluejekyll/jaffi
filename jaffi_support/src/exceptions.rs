@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{borrow::Cow, fmt};
+use std::{any::Any, borrow::Cow, fmt, panic::UnwindSafe};
 
 use jni::{
     objects::{JObject, JThrowable},
@@ -13,6 +13,40 @@ use jni::{
     sys::jarray,
     JNIEnv,
 };
+
+use crate::NullObject;
+
+/// Catches and potential panics, and then converts them to a RuntimeException in Java.
+///
+/// * `R` - must implement `Default` in order to allow the (unused) default return value in the case of an exception
+pub fn catch_panic_and_throw<F: FnOnce() -> R + UnwindSafe, R: NullObject>(
+    env: JNIEnv<'_>,
+    f: F,
+) -> R {
+    let result = std::panic::catch_unwind(f);
+
+    match result {
+        Ok(r) => r,
+        Err(e) => {
+            let msg: Cow<_> = match e {
+                _ if e.is::<&'static str>() => {
+                    let msg: &'static str = e.downcast_ref::<&str>().expect("failed to downcast");
+                    msg.into()
+                }
+                _ if e.is::<String>() => {
+                    let msg: &str = e.downcast_ref::<String>().expect("failed to downcast");
+                    msg.into()
+                }
+                _ => format!("unknown panic: {:?}", e.type_id()).into(),
+            };
+
+            let msg = format!("panic: {msg}");
+            env.throw_new("java/lang/RuntimeException", msg)
+                .expect("failed to throw exception");
+            R::null()
+        }
+    }
+}
 
 pub trait Throwable: Sized {
     /// Throw a new exception.
