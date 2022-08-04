@@ -484,7 +484,7 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
                     let result = match result {
                         Err(e) => {
                             e.throw(env).expect("failed to throw exception");
-                            return Default::default();
+                            return NullObject::null();
                         }
                         Ok(r) => r,
                     };
@@ -508,14 +508,16 @@ fn generate_class_ffi(class_ffi: &ClassFfi) -> TokenStream {
 
                     #(#args_to_rust)*
 
-                    let result = myself.#rust_method_name (
-                        #call_class_or_this,
-                        #(#args_call),*
-                    );
+                    exceptions::catch_panic_and_throw(env, || {
+                        let result = myself.#rust_method_name (
+                            #call_class_or_this,
+                            #(#args_call),*
+                        );
 
-                    #handle_err
+                        #handle_err
 
-                    <#result>::rust_to_java(result, env)
+                        <#result>::rust_to_java(result, env)
+                    })
                 }
             }
         })
@@ -557,11 +559,13 @@ pub(crate) fn generate_java_ffi(
 ) -> TokenStream {
     let header = quote! {
         use jaffi_support::{
+            exceptions,
             Exception,
             FromJavaToRust,
             FromRustToJava,
             FromJavaValue,
             IntoJavaValue,
+            NullObject,
             Throwable,
             jni::{
                 JNIEnv,

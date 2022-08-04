@@ -8,7 +8,7 @@
 use std::{borrow::Cow, ops::Deref};
 
 pub mod arrays;
-mod exceptions;
+pub mod exceptions;
 
 pub use exceptions::{Error, Exception, Throwable};
 pub use jni;
@@ -360,3 +360,35 @@ java_primitive!(JavaInt);
 java_primitive!(JavaLong);
 java_primitive!(JavaShort);
 java_primitive!(JavaVoid);
+
+pub trait NullObject {
+    fn null() -> Self;
+}
+
+macro_rules! null_object {
+    ($jtype: ty) => {
+        impl NullObject for $jtype {
+            fn null() -> Self {
+                Self::default()
+            }
+        }
+    };
+}
+
+null_object!(JavaByte);
+null_object!(JavaChar);
+null_object!(JavaDouble);
+null_object!(JavaFloat);
+null_object!(JavaInt);
+null_object!(JavaLong);
+null_object!(JavaShort);
+null_object!(JavaVoid);
+
+impl<'j, T> NullObject for T
+where
+    T: From<JObject<'j>>,
+{
+    fn null() -> Self {
+        JObject::null().into()
+    }
+}

@@ -10,7 +10,7 @@ build:
     cd {{java_src_path}} && javac -d {{class_path}} {{java_files}}
 
 test: build
-    JAFFI_LIB={{dylib_name}} java -Djava.library.path={{dylib_path}} --class-path {{class_path}} net.bluejekyll.TestRunner
+    JAFFI_LIB={{dylib_name}} java -Xcheck:jni -Djava.library.path={{dylib_path}} --class-path {{class_path}} net.bluejekyll.TestRunner
 
 clean:
     rm -rf {{class_path}}
