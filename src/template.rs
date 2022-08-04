@@ -43,7 +43,7 @@ fn generate_function(func: &Function) -> TokenStream {
         .map(|(name, rs_ty)| quote! { #name: #rs_ty })
         .collect::<Vec<_>>();
     let exception_name = exception_name_from_set(&func.exceptions);
-    let return_err = quote!{ Exception::<#exception_name> };
+    let return_err = quote!{ Exception::<'j, #exception_name> };
     let rs_result = &func.rs_result;
     let rs_result_sig = if !func.exceptions.is_empty() {
         quote!{ Result<#rs_result, #return_err> }
@@ -72,9 +72,9 @@ fn generate_function(func: &Function) -> TokenStream {
                     Err(e) => panic!("error exception_occurred, {e}"),
                 };
 
+                env.exception_clear().expect("error exception_clear");
                 match #return_err::catch(env, throwable) {
                     Ok(exception) => {
-                        env.exception_clear().expect("error exception_clear");
                         return Err(exception);
                     }
                     Err(e) => panic!("uncaught exception, {:#x}", e.into_inner() as usize),
@@ -307,14 +307,26 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
     for exception in exception_types {
         let ex_ident = make_ident(exception.class_name());
         let ex_class_name = format!("{exception}");
+        let doc_str = 
+        format!("An opaque type that represents the exception object `{exception}` from Java");
 
         tokens.extend(quote!{
+            #[doc = #doc_str]
+            #[derive(Copy, Clone)]
             pub struct #ex_ident;
 
             impl jaffi_support::Throwable for #ex_ident {
                 #[track_caller]
                 fn throw<'j, S: Into<JNIString>>(&self, env: JNIEnv<'j>, msg: S) -> Result<(), JniError> {
                     env.throw_new(#ex_class_name, msg)
+                }
+
+                fn catch<'j>(env: JNIEnv<'j>, throwable: JThrowable<'j>) -> Result<Self, JThrowable<'j>> { 
+                    if !throwable.is_null() && env.is_instance_of(throwable, #ex_class_name).expect("could not check instance_of") {
+                        Ok(Self)
+                    } else {
+                        Err(throwable)
+                    }
                 }
             }
         });
@@ -338,6 +350,7 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
             .collect::<Vec<_>>();
 
         tokens.extend(quote!{
+            #[derive(Copy, Clone)]
             pub enum #exception {
                 #(#ex_variants),*
             }
@@ -346,8 +359,23 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
                 #[track_caller]
                 fn throw<'j, S: Into<JNIString>>(&self, env: JNIEnv<'j>, msg: S) -> Result<(), JniError> {
                     match self {
-                        #(Self::#ex_variant_names(ex))|* => ex.throw(env, msg),
+                        #(Self::#ex_variant_names(ex) => ex.throw(env, msg)),*
                     }
+                }
+
+                fn catch<'j>(env: JNIEnv<'j>, throwable: JThrowable<'j>) -> Result<Self, JThrowable<'j>> { 
+                    const ALL_EXCEPTIONS: &[#exception]  = &[#(#exception::#ex_variants),*] as &[_];
+                    for exception in ALL_EXCEPTIONS {
+                        match exception {
+                            #(v @ Self::#ex_variant_names(_e) => {
+                                if let Ok(_e) = #ex_variant_names::catch(env, throwable) {
+                                    return Ok(*v);
+                                }
+                            })*
+                        }
+                    }
+
+                    Err(throwable)
                 }
             }
         })
@@ -537,7 +565,7 @@ pub(crate) fn generate_java_ffi(
             Throwable,
             jni::{
                 JNIEnv,
-                objects::{JClass, JObject, JValue},
+                objects::{JClass, JObject, JValue, JThrowable},
                 strings::JNIString,
                 errors::Error as JniError,
                 self,
