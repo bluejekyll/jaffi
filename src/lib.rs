@@ -108,12 +108,24 @@ impl<'a> Jaffi<'a> {
         let exceptions = objects
             .iter()
             .flat_map(|o| o.methods.iter())
-            .map(|f| &f.exceptions)
+            .filter_map(|f| {
+                if f.exceptions.is_empty() {
+                    None
+                } else {
+                    Some(&f.exceptions)
+                }
+            })
             .chain(
                 class_ffis
                     .iter()
                     .flat_map(|o| o.functions.iter())
-                    .map(|f| &f.exceptions),
+                    .filter_map(|f| {
+                        if f.exceptions.is_empty() {
+                            None
+                        } else {
+                            Some(&f.exceptions)
+                        }
+                    }),
             )
             .cloned()
             .collect();
