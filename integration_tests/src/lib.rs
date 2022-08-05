@@ -7,7 +7,13 @@ use net_bluejekyll::NetBluejekyllNativeStrings;
 use crate::net_bluejekyll::*;
 
 mod net_bluejekyll {
-    #![allow(dead_code)]
+    #![allow(
+        dead_code,
+        clippy::unused_unit,
+        clippy::needless_lifetimes,
+        clippy::let_unit_value,
+        clippy::let_and_return
+    )]
 
     include!(concat!(env!("OUT_DIR"), "/generated_jaffi.rs"));
 }

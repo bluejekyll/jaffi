@@ -45,3 +45,6 @@ jobs:
 
     - name: just test
       run: just test
+
+    - name: just lint
+      run: just lint

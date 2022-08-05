@@ -16,3 +16,5 @@ clean:
     rm -rf {{class_path}}
     cargo clean -p jaffi_integration_tests
  
+lint:
+    cargo clippy --all -- -D warnings
