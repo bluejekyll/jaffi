@@ -18,3 +18,8 @@ clean:
  
 lint:
     cargo clippy --all -- -D warnings
+
+publish:
+    cargo publish -p jaffi_support
+    `sleep 10`
+    cargo publish -p jaffi
