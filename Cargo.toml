@@ -1,9 +1,34 @@
 [package]
 name = "jaffi"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+authors = ["Benjamin Fry <benjaminfry@me.com>"]
 
-author = "benjaminfry@me.com"
+# A short blurb about the package. This is not rendered in any format when
+# uploaded to crates.io (aka this is not markdown)
+description = """
+Support for the jaffi code generator.
+"""
+
+# These URLs point to more information about the repository
+documentation = "https://docs.rs/jaffi"
+homepage = "https://github.com/bluejekyll/jaffi#readme"
+repository = "https://github.com/bluejekyll/jaffi"
+
+# This points to a file in the repository (relative to this Cargo.toml). The
+# contents of this file are stored and indexed in the registry.
+readme = "../README.md"
+
+# This is a small list of keywords used to categorize and search for this
+# package.
+keywords = ["Java", "JVM", "JNI"]
+categories = ["External FFI bindings"]
+
+# This is a string description of the license for this package. Currently
+# crates.io will validate the license provided against a whitelist of known
+# license identifiers from http://spdx.org/licenses/. Multiple licenses can
+# be separated with a `/`
+license = "MIT/Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,7 +39,7 @@ members = ["jaffi_support", "integration_tests"]
 cafebabe = { version = "0.5.0", git = "https://github.com/staktrace/cafebabe.git", branch = "main" }
 enum-as-inner = "0.5"
 heck = "0.4.0"
-jaffi_support = { version = "0.1.0", path = "./jaffi_support" }
+jaffi_support = { version = "0.2.0", path = "./jaffi_support" }
 proc-macro2 = "1.0.40"
 quote = "1.0.20"
 thiserror = "1.0.20"

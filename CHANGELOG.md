@@ -9,6 +9,7 @@ All notes should be prepended with the location of the change, e.g. `(jaffi)` or
 
 ### Added
 
+- Linting to CI #10
 - Wrap Java Exceptions and also throw Exceptions on panics #9
 - Github actions for testing #4
 
