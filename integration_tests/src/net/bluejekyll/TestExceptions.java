@@ -76,8 +76,10 @@ public class TestExceptions {
             throw new RuntimeException("exception of wrong type caught: " + exception);
         }
 
-        if (!exception.getMessage().equals("panic: Panics are safe")) {
+        if (!exception.getMessage().startsWith("panic 'Panics are safe'")) {
             throw new RuntimeException("expected msg: 'panic: Panics are safe' got: '" + exception.getMessage() + "'");
         }
+
+        System.out.println("caught exception: " + exception);
     }
 }
