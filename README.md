@@ -42,10 +42,10 @@ To use the library, this hasn't been published to Crates.io yet, you will need t
 
 ```toml
 [build-dependencies]
-jaffi = { version = "0.1.0", git = "git@github.com:bluejekyll/jaffi.git", branch = "main" }
+jaffi = "0.2.0"
 
 [dependencies]
-jaffi_support = { version = "0.1.0", git = "git@github.com:bluejekyll/jaffi.git", branch = "main" }
+jaffi_support = "0.2.0"
 ```
 
 Once that is added, you will need to create a `build.rs` script for executing Jaffi, something like this (see the integration test for a working example [build.rs](https://github.com/bluejekyll/jaffi/blob/084db8c2478bbb43343c4661dafb968f9289575e/integration_tests/build.rs)):
@@ -103,13 +103,138 @@ Discovery of all the functions available is easily done with `cargo doc --docume
 
 This is one of the primary benefits of the library. It will generate type-safe bindings from the Java and require that the `*RsImpl` type implements all of the required native functions. Additionally, it properly converts the types between the Rust calls and the Java (at the time of this writing only primitive types have been tested). The compiler will helpfully fail until all the native interfaces have been implemented.
 
+Example from the `integration_tests`, these Java native interfaces:
+
+```java
+public class NativePrimitives extends ParentClass {
+    // basic test
+    public static native void voidVoid();
+
+    // a parameter
+    public static native void voidLong(long foo);
+
+    // ...
+}
+```
+
+are then generated into a trait in rust:
+
+```rust
+pub trait NativePrimitivesRs<'j> {
+    fn from_env(env: JNIEnv<'j>) -> Self;
+    fn void_void(&self, class: NetBluejekyllNativePrimitivesClass<'j>);
+    fn void_long_j(
+        &self, 
+        class: NetBluejekyllNativePrimitivesClass<'j>, 
+        arg0: i64
+    );
+
+    // ...
+}
+```
+
+where the env should be captured in the `from_env` which constructs the Rust type. Then the bindings are called from the assocatied C FFI function (there's no need to use these functions directly):
+
+```rust
+#[no_mangle]
+pub extern "system" fn Java_net_bluejekyll_NativePrimitives_voidVoid<'j>(
+    env: JNIEnv<'j>, 
+    class: NetBluejekyllNativePrimitivesClass<'j>
+) -> JavaVoid {
+    // ...
+}
+
+#[no_mangle]
+pub extern "system" fn Java_net_bluejekyll_NativePrimitives_voidLong__J<'j>(
+    env: JNIEnv<'j>, 
+    class: NetBluejekyllNativePrimitivesClass<'j>, 
+    arg0: JavaLong
+) -> JavaVoid {
+    // ...
+}
+```
+
+All the calls into rust are properly wrapped in panic handlers and will convert Errors into Exceptions (and vice versa) as necessary. See `Exceptions, Errors, and Panics` below.
+
 ### Wrappers for specified classes, i.e. calling back to Java
 
 In all function invocations a `this` parameter is available for calling back to any `public` methods on the class. For static methods, the `this` is bound to a `*Class` generated type. Both the static method invocations and object method invocations share a trait that is implemented for both that exposes all `public static` methods as well.
 
+Example from the `inegration_tests`:
+
+```rust
+    /// A constructor method wrapped and then the type returned from Rust to Java
+    fn ctor(
+        &self,
+        _class: NetBluejekyllNativeStringsClass<'j>,
+        arg0: String,
+    ) -> NetBluejekyllNativeStrings<'j> {
+        println!("ctor: {arg0}");
+        NetBluejekyllNativeStrings::new_1net_bluejekyll_native_strings_ljava_lang_string_2(
+            self.env, arg0,
+        )
+    }
+```
+
 ### Super class support
 
 If specified in the `build.rs` as the `classes_to_wrap` option, any super classes will also be wrapped, in addition to those specified, any classes that appear as arguments will (and are found in the classpath) will have wrappers generated. To get access to a super class or interface and it's methods, simply call `this.as_{package}_{Class}()` on and object (won't work on `static native` methods), and then that super classes methods can be called on the object.
+
+Example from the `integration_tests`:
+
+```rust
+    fn call_dad_native(
+        &self,
+        this: net_bluejekyll::NetBluejekyllNativePrimitives<'j>,
+        arg0: i32,
+    ) -> i32 {
+        println!("call_dad_native with {arg0}");
+
+        let parent = this.as_net_bluejekyll_parent_class();
+        parent.call_1dad(self.env, arg0)
+    }
+```
+
+### Exceptions, Errors, and Panics
+
+Any panics in the Rust code will be caught via `std::panic::set_hook` and `std::panic::catch_unwind`. The panic hook will create an `RuntimeException` in Java (based on the `PanicInfo` in Rust). The `catch_unwind` will catch the panic and ensure that a proper default of null value is returned from the native method, this value is essentially useless as the Exception should shortcircuit the return in Java.
+
+The type signature in the Java classfile will be evaluated for Exceptions. An enum type in Rust will be generated that contains the various exception types that can be either thrown in Java or can be used by jaffi to auto translate a Rust error into an Exception in Java. The interfaces generated in Rust abstract these conversations out of the method interfaces. If a method does not list Exceptions in it's `throws` section yet those exceptions need to be caught, this can be done manually via the `JNIEnv` that is available to the generated methods.
+
+Examples from the `integration_tests`:
+
+```rust
+    fn throws_something(
+        &self,
+        _this: NetBluejekyllExceptions<'j>,
+    ) -> Result<(), Error<SomethingExceptionErr>> {
+        Err(Error::new(
+            SomethingExceptionErr::SomethingException(SomethingException),
+            "Test Message",
+        ))
+    }
+
+    fn catches_something(
+        &self,
+        this: net_bluejekyll::NetBluejekyllExceptions<'j>,
+    ) -> net_bluejekyll::NetBluejekyllSomethingException<'j> {
+        let ex = this
+            .i_always_throw(self.env)
+            .expect_err("error expected here");
+
+        #[allow(irrefutable_let_patterns)]
+        if let SomethingExceptionErr::SomethingException(SomethingException) = ex.throwable() {
+            net_bluejekyll::NetBluejekyllSomethingException::from(JObject::from(ex.exception()))
+        } else {
+            panic!("expected SomethingException")
+        }
+    }
+
+    /// this panic will generate an RuntimeException in Java.
+    fn panics_are_runtime_exceptions(&self, _this: NetBluejekyllExceptions<'j>) {
+        panic!("{}", "Panics are safe".to_string());
+    }
+```
 
 ## What's next?
 
