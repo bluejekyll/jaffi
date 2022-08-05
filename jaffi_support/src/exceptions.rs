@@ -5,16 +5,57 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::{any::Any, borrow::Cow, fmt, panic::UnwindSafe};
+use std::{
+    any::Any,
+    borrow::Cow,
+    fmt,
+    panic::{self, PanicInfo, UnwindSafe},
+};
 
 use jni::{
     objects::{JObject, JThrowable},
     strings::JNIString,
     sys::jarray,
-    JNIEnv,
+    JNIEnv, JavaVM,
 };
 
 use crate::NullObject;
+
+pub fn get_panic_message(message: &'_ (dyn Any + Send)) -> Cow<'_, str> {
+    match message {
+        _ if message.is::<&'static str>() => {
+            let msg: &'static str = message.downcast_ref::<&str>().expect("failed to downcast");
+            msg.into()
+        }
+        _ if message.is::<String>() => {
+            let msg: &str = message
+                .downcast_ref::<String>()
+                .expect("failed to downcast");
+            msg.into()
+        }
+        _ => format!("unknown panic: {:?}", message.type_id()).into(),
+    }
+}
+
+/// This panic hook can add a bit more information than the catch_unwind, which doesn't get the full panic_info
+pub fn register_panic_hook(vm: JavaVM) {
+    panic::set_hook(Box::new(move |panic_info: &PanicInfo| {
+        let env = vm.get_env().expect("not called in a JVM context");
+
+        // we don't want to overwrite an existing exception...
+        if !env.exception_check().unwrap_or(true) {
+            let msg = get_panic_message(panic_info.payload());
+            let (file, line, column) = panic_info
+                .location()
+                .map(|l| (l.file(), l.line(), l.column()))
+                .unwrap_or_default();
+
+            let msg = format!("panic '{msg}' at {file}:{line}:{column}");
+            env.throw_new("java/lang/RuntimeException", msg)
+                .expect("failed to throw exception");
+        }
+    }));
+}
 
 /// Catches and potential panics, and then converts them to a RuntimeException in Java.
 ///
@@ -28,21 +69,14 @@ pub fn catch_panic_and_throw<F: FnOnce() -> R + UnwindSafe, R: NullObject>(
     match result {
         Ok(r) => r,
         Err(e) => {
-            let msg: Cow<_> = match e {
-                _ if e.is::<&'static str>() => {
-                    let msg: &'static str = e.downcast_ref::<&str>().expect("failed to downcast");
-                    msg.into()
-                }
-                _ if e.is::<String>() => {
-                    let msg: &str = e.downcast_ref::<String>().expect("failed to downcast");
-                    msg.into()
-                }
-                _ => format!("unknown panic: {:?}", e.type_id()).into(),
-            };
+            // we don't want to overwrite an existing exception...
+            if !env.exception_check().unwrap_or(true) {
+                let msg = get_panic_message(&e);
 
-            let msg = format!("panic: {msg}");
-            env.throw_new("java/lang/RuntimeException", msg)
-                .expect("failed to throw exception");
+                let msg = format!("panic '{msg}'");
+                env.throw_new("java/lang/RuntimeException", msg)
+                    .expect("failed to throw exception");
+            }
             R::null()
         }
     }

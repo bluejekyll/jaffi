@@ -566,9 +566,9 @@ pub(crate) fn generate_java_ffi(
             FromJavaValue,
             IntoJavaValue,
             NullObject,
-            Throwable,
             jni::{
-                JNIEnv,
+                sys::jint,
+                JavaVM, JNIEnv,
                 objects::{JClass, JObject, JValue, JThrowable},
                 strings::JNIString,
                 errors::Error as JniError,
@@ -585,12 +585,23 @@ pub(crate) fn generate_java_ffi(
 
     let exceptions = generate_exceptions(exceptions);
 
+    let onload = quote!{
+        /// Hook to setup panic_handler on the dynamic library load, etc.
+        #[no_mangle]
+        pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const std::ffi::c_void) -> jint {
+            exceptions::register_panic_hook(vm);
+            jni::sys::JNI_VERSION_1_8
+        }
+    };
+
     quote! {
         #header
 
         #exceptions
 
         #objects
+
+        #onload
 
         #class_ffis
     }
