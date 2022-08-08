@@ -246,7 +246,7 @@ This project makes heavy usage of these crates, thank you to everyone who's work
 
 - `cafebabe` - a Java class file reader
 - `jni` - state of the art JNI support in Rust
-- `tinytemplate` - for all the Rust code generation
+- `quote` and `proc-macro2` - for all the Rust code generation
 
 Thank you!
 
