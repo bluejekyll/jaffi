@@ -17,7 +17,7 @@ repository = "https://github.com/bluejekyll/jaffi"
 
 # This points to a file in the repository (relative to this Cargo.toml). The
 # contents of this file are stored and indexed in the registry.
-readme = "../README.md"
+readme = "./README.md"
 
 # This is a small list of keywords used to categorize and search for this
 # package.
@@ -36,7 +36,7 @@ license = "MIT/Apache-2.0"
 members = ["jaffi_support", "integration_tests"]
 
 [dependencies]
-cafebabe = { version = "0.5.0", git = "https://github.com/staktrace/cafebabe.git", branch = "main" }
+cafebabe = { version = "0.6.0" }
 enum-as-inner = "0.5"
 heck = "0.4.0"
 jaffi_support = { version = "0.2.0", path = "./jaffi_support" }
