@@ -103,6 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Cow::from("net.bluejekyll.Exceptions"),
     ];
     let classes_to_wrap = vec![Cow::from("net.bluejekyll.ParentClass")];
+    let user_on_load_fn = Some(Cow::from("crate::on_load"));
     let output_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
     let output_file = Cow::from(Path::new("generated_jaffi.rs"));
 
@@ -111,6 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .output_filename(&output_file)
         .native_classes(classes)
         .classes_to_wrap(classes_to_wrap)
+        .user_on_load_fn(user_on_load_fn)
         .classpath(vec![Cow::from(class_path)])
         .build();
 

@@ -64,6 +64,11 @@ pub struct Jaffi<'a> {
     /// List of classes that wrappers will be generated for
     #[builder(default=Vec::new())]
     classes_to_wrap: Vec<Cow<'a, str>>,
+    /// A function to call on library load to setup things like logging or other static initialization tasks.
+    ///
+    /// signature `fn {user_on_load_fn}(vm: &JavaVM)`, it is infallible, panicking will crash the VM.
+    #[builder(default=None)]
+    user_on_load_fn: Option<Cow<'a, str>>,
 }
 
 impl<'a> Jaffi<'a> {
@@ -130,7 +135,12 @@ impl<'a> Jaffi<'a> {
             .cloned()
             .collect();
 
-        let ffi_tokens = template::generate_java_ffi(objects, class_ffis, exceptions);
+        let ffi_tokens = template::generate_java_ffi(
+            objects,
+            class_ffis,
+            exceptions,
+            self.user_on_load_fn.clone(),
+        );
         let rendered = ffi_tokens.to_string();
 
         let mut rust_file = File::create(rust_file)?;

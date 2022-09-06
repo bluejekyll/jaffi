@@ -7,7 +7,7 @@
 
 use std::{
     collections::{BTreeSet, HashSet},
-    fmt,
+    fmt, borrow::Cow, str::FromStr,
 };
 
 use cafebabe::descriptor::{BaseType, FieldType, ReturnDescriptor, Ty};
@@ -336,16 +336,21 @@ fn generate_exceptions(exception_sets: HashSet<BTreeSet<JavaDesc>>) -> TokenStre
     for exception_set in &exception_sets {
         let exception = exception_name_from_set(exception_set);
         // the enum variants
+        // there's a problem here
         let ex_variants = exception_sets
             .iter()
             .flat_map(|s| s.iter())
             .map(|d| make_ident(d.class_name()))
+            .collect::<HashSet<_>>()
+            .into_iter()
             .map(|i| quote! { #i(#i)})
             .collect::<Vec<_>>();
         let ex_variant_names = exception_sets
             .iter()
             .flat_map(|s| s.iter())
             .map(|d| make_ident(d.class_name()))
+            .collect::<HashSet<_>>()
+            .into_iter()
             .map(|i| quote! { #i })
             .collect::<Vec<_>>();
 
@@ -556,6 +561,7 @@ pub(crate) fn generate_java_ffi(
     objects: Vec<Object>,
     other_classes: Vec<ClassFfi>,
     exceptions: HashSet<BTreeSet<JavaDesc>>,
+    on_load_fn: Option<Cow<'_, str>>,
 ) -> TokenStream {
     let header = quote! {
         use jaffi_support::{
@@ -585,11 +591,28 @@ pub(crate) fn generate_java_ffi(
 
     let exceptions = generate_exceptions(exceptions);
 
-    let onload = quote!{
+    let user_on_load = if let Some(on_load_fn) = on_load_fn {
+        let on_load_fn = on_load_fn.split("::").fold(TokenStream::new(), |mut tokens, ident| {
+            let ident = format_ident!("{ident}");
+            tokens.extend(quote!{ #ident:: });
+            tokens
+        });
+
+        quote! {
+            #on_load_fn(&vm);
+        }
+    } else {
+        quote! {}
+    };
+
+    let on_load = quote!{
         /// Hook to setup panic_handler on the dynamic library load, etc.
         #[no_mangle]
-        pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const std::ffi::c_void) -> jint {
-            exceptions::register_panic_hook(vm);
+        pub extern "system" fn JNI_OnLoad(vm: jaffi_support::jni::JavaVM, _reserved: *const std::ffi::c_void) -> jint {
+            exceptions::register_panic_hook(&vm);
+
+            #user_on_load
+
             jni::sys::JNI_VERSION_1_8
         }
     };
@@ -601,7 +624,7 @@ pub(crate) fn generate_java_ffi(
 
         #objects
 
-        #onload
+        #on_load
 
         #class_ffis
     }

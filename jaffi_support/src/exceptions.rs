@@ -38,7 +38,10 @@ pub fn get_panic_message(message: &'_ (dyn Any + Send)) -> Cow<'_, str> {
 }
 
 /// This panic hook can add a bit more information than the catch_unwind, which doesn't get the full panic_info
-pub fn register_panic_hook(vm: JavaVM) {
+pub fn register_panic_hook(vm: &JavaVM) {
+    let vm = vm.get_java_vm_pointer();
+    let vm = unsafe { JavaVM::from_raw(vm) }.expect("could not get JavaVM");
+
     panic::set_hook(Box::new(move |panic_info: &PanicInfo| {
         let env = vm.get_env().expect("not called in a JVM context");
 

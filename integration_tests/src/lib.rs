@@ -1,10 +1,15 @@
 use jaffi_support::{
-    jni::{objects::JObject, JNIEnv},
+    jni::{objects::JObject, JNIEnv, JavaVM},
     Error,
 };
 use net_bluejekyll::NetBluejekyllNativeStrings;
 
 use crate::net_bluejekyll::*;
+
+fn on_load(_jvm: &JavaVM) {
+    // this is just a test
+    println!("library loaded!");
+}
 
 mod net_bluejekyll {
     #![allow(
