@@ -83,6 +83,10 @@ impl<'j> net_bluejekyll::NativePrimitivesRs<'j> for NativePrimitivesRsImpl<'j> {
         parent.call_1dad(self.env, arg0)
     }
 
+    fn invert(&self, _this:NetBluejekyllNativePrimitives<'j>, arg0: bool) -> bool {
+        return !arg0
+    }
+
     fn unsupported(
         &self,
         _this: NetBluejekyllNativePrimitives<'j>,
