@@ -10,6 +10,7 @@ public class TestPrimitives {
         test_add_values_native();
         test_print_hello();
         test_call_dad();
+        test_invert();
         System.out.println("<<<< " + TestPrimitives.class.getName() + " tests succeeded");
     }
 
@@ -69,6 +70,13 @@ public class TestPrimitives {
 
         if (expected != got) {
             throw new RuntimeException("Expected " + expected + " got " + got);
+        }
+    }
+
+    static void test_invert() {
+        NativePrimitives obj = new NativePrimitives();
+        if (obj.invert(true)) {
+            throw new RuntimeException("Expected false");
         }
     }
 }

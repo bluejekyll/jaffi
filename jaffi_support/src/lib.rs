@@ -299,6 +299,12 @@ macro_rules! from_java_value {
     };
 }
 
+impl<'j> FromJavaValue<'j, JavaBoolean> for bool {
+    fn from_jvalue(_env: JNIEnv<'j>, jvalue: JValue<'j>) -> Self {
+        jvalue.z().expect("wrong type conversion")
+    }    
+}
+
 from_java_value!(JavaByte, u8, b);
 from_java_value!(JavaChar, char, c);
 from_java_value!(JavaDouble, f64, d);
@@ -337,6 +343,7 @@ macro_rules! into_java_value {
     };
 }
 
+into_java_value!(JavaBoolean, bool);
 into_java_value!(JavaByte, u8);
 into_java_value!(JavaChar, char);
 into_java_value!(JavaDouble, f64);
@@ -352,6 +359,7 @@ macro_rules! java_primitive {
     };
 }
 
+java_primitive!(JavaBoolean);
 java_primitive!(JavaByte);
 java_primitive!(JavaChar);
 java_primitive!(JavaDouble);
@@ -375,6 +383,7 @@ macro_rules! null_object {
     };
 }
 
+null_object!(JavaBoolean);
 null_object!(JavaByte);
 null_object!(JavaChar);
 null_object!(JavaDouble);
