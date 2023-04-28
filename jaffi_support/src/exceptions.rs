@@ -21,7 +21,7 @@ use jni::{
 
 use crate::NullObject;
 
-pub fn get_panic_message(message: &'_ (dyn Any + Send)) -> Cow<'_, str> {
+pub fn get_panic_message(message: &dyn Any) -> Cow<'_, str> {
     match message {
         _ if message.is::<&'static str>() => {
             let msg: &'static str = message.downcast_ref::<&str>().expect("failed to downcast");
